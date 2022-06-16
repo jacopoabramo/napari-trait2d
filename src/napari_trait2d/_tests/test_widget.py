@@ -12,3 +12,6 @@ def test_trait2d_widget(make_napari_viewer, capsys):
 
     # create our widget, passing in the viewer
     my_widget = NTRAIT2D(viewer)
+    
+    # TODO: implement tests
+    assert True == True
