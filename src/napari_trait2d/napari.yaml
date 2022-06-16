@@ -2,20 +2,9 @@ name: napari-trait2d
 display_name: napari TRAIT2D
 contributions:
   commands:
-    - id: napari-trait2d.make_qwidget
-      python_name: napari_trait2d._widget:ExampleQWidget
-      title: Make example QWidget
-    - id: napari-trait2d.make_magic_widget
-      python_name: napari_trait2d._widget:example_magic_widget
-      title: Make example magic widget
-    - id: napari-trait2d.make_func_widget
-      python_name: napari_trait2d._widget:example_function_widget
-      title: Make example function widget
+    - id: napari-trait2d.trait2d_widget
+      python_name: napari_trait2d._widget:NTRAIT2D
+      title: napari TRAIT2D
   widgets:
-    - command: napari-trait2d.make_qwidget
-      display_name: Example QWidget
-    - command: napari-trait2d.make_magic_widget
-      display_name: Example Magic Widget
-    - command: napari-trait2d.make_func_widget
-      autogenerate: true
-      display_name: Example Function Widget
+    - command: napari-trait2d.trait2d_widget
+      display_name: TRAIT2D tracker GUI

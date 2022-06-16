@@ -6,41 +6,52 @@ see: https://napari.org/plugins/guides.html?#widgets
 
 Replace code below according to your needs.
 """
-from typing import TYPE_CHECKING
 
-from magicgui import magic_factory
-from qtpy.QtWidgets import QHBoxLayout, QPushButton, QWidget
+from napari.viewer import Viewer
+from qtpy.QtWidgets import (
+    QWidget, 
+    QFormLayout,
+    QPushButton,
+    QVBoxLayout,
+    QDoubleSpinBox,
+    QSpinBox
+)
+from dataclasses import dataclass, fields
 
-if TYPE_CHECKING:
-    import napari
-
-
-class ExampleQWidget(QWidget):
-    # your QWidget.__init__ can optionally request the napari viewer instance
-    # in one of two ways:
-    # 1. use a parameter called `napari_viewer`, as done here
-    # 2. use a type annotation of 'napari.viewer.Viewer' for any parameter
-    def __init__(self, napari_viewer):
-        super().__init__()
-        self.viewer = napari_viewer
-
-        btn = QPushButton("Click me!")
-        btn.clicked.connect(self._on_click)
-
-        self.setLayout(QHBoxLayout())
-        self.layout().addWidget(btn)
-
-    def _on_click(self):
-        print("napari has", len(self.viewer.layers), "layers")
+@dataclass
+class TRAIT2DParams:
+    SEF_sigma : int = 6
+    SEF_threshold : int = 4
+    SEF_min_peak : float = 0.2
+    patch_size : int = 10
+    link_max_dist : int = 15
+    link_frame_gap : int = 15
+    min_track_length : int = 1
+    resolution : int = 1
+    frame_rate : int = 100 
 
 
-@magic_factory
-def example_magic_widget(img_layer: "napari.layers.Image"):
-    print(f"you have selected {img_layer}")
+class NTRAIT2D(QWidget):
+    def __init__(self, viewer: Viewer, parent=None):
+        super().__init__(parent)
+        self.viewer = viewer
+        self.params = TRAIT2DParams()
+        self.mainLayout = QVBoxLayout()
 
+        self.fileLayout = QFormLayout()
+        self.loadFileButton = QPushButton("Select")
+        self.fileLayout.addRow("Load parameter file (*.csv, *.json)", self.loadFileButton)
 
-# Uses the `autogenerate: true` flag in the plugin manifest
-# to indicate it should be wrapped as a magicgui to autogenerate
-# a widget.
-def example_function_widget(img_layer: "napari.layers.Image"):
-    print(f"you have selected {img_layer}")
+        self.paramLayout = QFormLayout()
+        for field in fields(self.params):
+            attr = getattr(self.params, field.name)
+            if type(attr) == int:
+                spinBox = QSpinBox()
+            else:
+                spinBox = QDoubleSpinBox()
+            spinBox.setValue(attr)
+            self.paramLayout.addRow(field.name, spinBox)
+
+        self.mainLayout.addLayout(self.fileLayout)
+        self.mainLayout.addLayout(self.paramLayout)
+        self.setLayout(self.mainLayout)
