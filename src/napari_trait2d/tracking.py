@@ -1,14 +1,14 @@
 import numpy as np
 from scipy.optimize import linear_sum_assignment
+from napari_trait2d.common import TRAIT2DParams
+from dataclasses import dataclass, field
 
+@dataclass
 class Track(object):
-
-    def __init__(self, first_point, first_frame, trackIdCount):
-
-        self.track_id = trackIdCount  # track ID
-        self.trace_frame = [first_frame]  # frame
-        self.skipped_frames = 0  # number of frames skipped undetected
-        self.trace = [first_point]  # trace path
+    track_id : int
+    trace_frame: list[np.ndarray]
+    trace: list
+    skipped_frames: int = field(default=0, init=False)
 
 
 class Tracker(object):
@@ -16,17 +16,11 @@ class Tracker(object):
     Links detected objects between frames
     """
 
-    def __init__(self, dist_thresh=30, max_frames_to_skip=20, trackIdCount=0):
-
-        self.dist_thresh = dist_thresh
-        self.max_frames_to_skip = max_frames_to_skip
-        self.tracks = []
-        self.trackIdCount = trackIdCount
-        self.completeTracks = []
-
-        print(" - - - - - tracker: - - - - - - - ")
-        print("dist_thresh ", dist_thresh)
-        print("max_frames_to_skip ", max_frames_to_skip)
+    def __init__(self, parameters: TRAIT2DParams) -> None:
+        self.params = parameters
+        self.tracks : list[Track] = []
+        self.track_id_count = 0
+        self.complete_tracks: list[Track] = []
 
     def cost_calculation(self, detections):
         '''
@@ -46,7 +40,7 @@ class Tracker(object):
                 except:
                     pass
         cost_array = np.asarray(cost)
-        cost_array[cost_array > self.dist_thresh] = 10000
+        cost_array[cost_array > self.params.link_max_dist] = 10000
         cost = cost_array.tolist()
         return cost
 
@@ -72,8 +66,8 @@ class Tracker(object):
         # create tracks if no tracks  found
         if (len(self.tracks) == 0):
             for i in range(len(detections)):
-                track = Track(detections[i], frameN, self.trackIdCount)
-                self.trackIdCount += 1
+                track = Track(detections[i], frameN, self.track_id_count)
+                self.track_id_count += 1
                 self.tracks.append(track)
 
         # tracking the targets if there were tracks before
@@ -91,7 +85,7 @@ class Tracker(object):
             for i in range(len(assignment)):
                 if (assignment[i] != -1):
                     # check with the cost distance threshold and unassign if cost is high
-                    if (cost[i][assignment[i]] > self.dist_thresh):
+                    if (cost[i][assignment[i]] > self.params.link_max_dist):
                         assignment[i] = -1
                         un_assigned_tracks.append(i)
                         self.tracks[i].skipped_frames += 1
@@ -115,16 +109,16 @@ class Tracker(object):
             if(len(un_assigned_detects) != 0):
                 for i in range(len(un_assigned_detects)):
                     track = Track(detections[un_assigned_detects[i]], frameN,
-                                  self.trackIdCount)
+                                  self.track_id_count)
 
-                    self.trackIdCount += 1
+                    self.track_id_count += 1
                     self.tracks.append(track)
 
             del_tracks = []  # list of tracks to delete
 
         # remove tracks which have too many skipped frames
             for i in range(len(self.tracks)):
-                if (self.tracks[i].skipped_frames > self.max_frames_to_skip):
+                if (self.tracks[i].skipped_frames > self.params.link_frame_gap):
                     del_tracks.append(i)
 
         # delete track
@@ -135,7 +129,7 @@ class Tracker(object):
                 for id in del_tracks:
                     new_id = id-val_compensate_for_del
 
-                    self.completeTracks.append(self.tracks[new_id])
+                    self.complete_tracks.append(self.tracks[new_id])
                     del self.tracks[new_id]
                     val_compensate_for_del += 1
 
