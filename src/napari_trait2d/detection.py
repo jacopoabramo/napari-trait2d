@@ -15,7 +15,7 @@ class Detector(object):
         self.img_sef = []
         self.binary_sef = []
     
-    def spot_enhancing_filter(self, img: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    def spot_enhancing_filter(self, img: np.ndarray) -> tuple:
         '''
         Spot enhancing filter implementation.
         '''
@@ -39,7 +39,7 @@ class Detector(object):
 
         return img_sef, img_sef_bin
     
-    def radialsym_centre(self, img: np.ndarray):
+    def radialsym_centre(self, img: np.ndarray) -> list:
         '''
         Calculates the center of a 2D intensity distribution (calculation of radial symmetry centers)  
 
