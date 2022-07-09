@@ -19,31 +19,10 @@ from qtpy.QtWidgets import (
     QFileDialog,
 )
 from superqt import QEnumComboBox
-from dataclasses import dataclass, fields
+from napari_trait2d.common import *
+from dataclasses import fields
 from dacite import from_dict
-from typing import Union, get_type_hints
-from enum import Enum
-
-class SpotEnum(Enum):
-    DARK = "DARK"
-    BRIGHT = "BRIGHT"
-
-@dataclass
-class TRAIT2DParams:
-    SEF_sigma: int = 6
-    SEF_threshold: int = 4
-    SEF_min_peak: float = 0.2
-    patch_size: int = 10
-    link_max_dist: int = 15
-    link_frame_gap: int = 15
-    min_track_length: int = 1
-    resolution: int = 1
-    frame_rate: int = 100
-    start_frame: int = 0
-    end_frame: int = 100
-    spot_type: SpotEnum = SpotEnum.BRIGHT
-
-ParamType = Union[int, float, SpotEnum]
+from typing import get_type_hints
 
 class NTRAIT2D(QWidget):
     def __init__(self, viewer: Viewer, parent=None):
@@ -95,6 +74,7 @@ class NTRAIT2D(QWidget):
         self.setLayout(self.mainLayout)
 
         self.loadFileButton.clicked.connect(self._on_load_clicked)
+        self.runButton.clicked.connect(self._on_run_button_clicked)
 
     def _update_field(self, name: str):
         if type(getattr(self.params, name)) in [int, float]:
@@ -142,3 +122,6 @@ class NTRAIT2D(QWidget):
                         else:
                             widget.setCurrentEnum(attr)
                         break
+    
+    def _on_run_button_clicked(self):
+        pass
