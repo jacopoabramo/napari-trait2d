@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 class Track(object):
     track_id : int
     trace_frame: list[np.ndarray]
-    trace: list
+    trace: list[list]
     skipped_frames: int = field(default=0, init=False)
 
 
@@ -58,7 +58,7 @@ class Tracker(object):
 
         return assignment
 
-    def update(self, detections, frameN):
+    def update(self, detections, frame):
         '''
         main linking function
         '''
@@ -66,7 +66,7 @@ class Tracker(object):
         # create tracks if no tracks  found
         if (len(self.tracks) == 0):
             for i in range(len(detections)):
-                track = Track(detections[i], frameN, self.track_id_count)
+                track = Track(track_id=self.track_id_count, trace_frame=[frame], trace=[detections[i]])
                 self.track_id_count += 1
                 self.tracks.append(track)
 
@@ -92,7 +92,7 @@ class Tracker(object):
 
                     else:  # add the detection to the track
                         self.tracks[i].trace.append(detections[assignment[i]])
-                        self.tracks[i].trace_frame.append(frameN)
+                        self.tracks[i].trace_frame.append(frame)
                         self.tracks[i].skipped_frames = 0
 
                 else:
@@ -108,7 +108,7 @@ class Tracker(object):
             # Start new tracks
             if(len(un_assigned_detects) != 0):
                 for i in range(len(un_assigned_detects)):
-                    track = Track(detections[un_assigned_detects[i]], frameN,
+                    track = Track(detections[un_assigned_detects[i]], frame,
                                   self.track_id_count)
 
                     self.track_id_count += 1
@@ -132,7 +132,3 @@ class Tracker(object):
                     self.complete_tracks.append(self.tracks[new_id])
                     del self.tracks[new_id]
                     val_compensate_for_del += 1
-
-        print("number of detections: ", len(detections))
-        print("number of tracks: ", len(self.tracks))
-        print()

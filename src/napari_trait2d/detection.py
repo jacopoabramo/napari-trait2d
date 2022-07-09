@@ -1,4 +1,5 @@
 import numpy as np
+import warnings
 from scipy.ndimage import gaussian_laplace
 from scipy.signal import convolve2d
 from skimage.feature import peak_local_max
@@ -44,82 +45,85 @@ class Detector(object):
 
         '''
 
-        def ls_radial_center_fit(m, b, w):
-            '''
-            least squares solution to determine the radial symmetry center
-            '''
-            wm2p1 = np.divide(w, (np.multiply(m, m)+1))
-            sw = np.sum(wm2p1)
-            smmw = np.sum(np.multiply(np.multiply(m, m), wm2p1))
-            smw = np.sum(np.multiply(m, wm2p1))
-            smbw = np.sum(np.multiply(np.multiply(m, b), wm2p1))
-            sbw = np.sum(np.multiply(b, wm2p1))
-            det = smw*smw - smmw*sw
-            xc = (smbw*sw - smw*sbw)/det  # relative to image center
-            yc = (smbw*smw - smmw*sbw)/det  # relative to image center
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            
+            def ls_radial_center_fit(m, b, w):
+                '''
+                least squares solution to determine the radial symmetry center
+                '''
+                wm2p1 = np.divide(w, (np.multiply(m, m)+1))
+                sw = np.sum(wm2p1)
+                smmw = np.sum(np.multiply(np.multiply(m, m), wm2p1))
+                smw = np.sum(np.multiply(m, wm2p1))
+                smbw = np.sum(np.multiply(np.multiply(m, b), wm2p1))
+                sbw = np.sum(np.multiply(b, wm2p1))
+                det = smw*smw - smmw*sw
+                xc = (smbw*sw - smw*sbw)/det  # relative to image center
+                yc = (smbw*smw - smmw*sbw)/det  # relative to image center
 
-            return xc, yc
+                return xc, yc
 
-        # GRID
-        # number of grid points
-        Ny, Nx = img.shape
+            # GRID
+            # number of grid points
+            Ny, Nx = img.shape
 
-        # for x
-        val = int((Nx-1)/2.0-0.5)
-        xm_onerow = np.asarray(range(-val, val+1))
-        xm = np.ones((Nx-1, Nx-1))*xm_onerow
+            # for x
+            val = int((Nx-1)/2.0-0.5)
+            xm_onerow = np.asarray(range(-val, val+1))
+            xm = np.ones((Nx-1, Nx-1))*xm_onerow
 
-        # for y
-        val = int((Ny-1)/2.0-0.5)
-        ym_onerow = np.asarray(range(-val, val+1))
-        ym = (np.ones((Ny-1, Ny-1))*ym_onerow).transpose()
+            # for y
+            val = int((Ny-1)/2.0-0.5)
+            ym_onerow = np.asarray(range(-val, val+1))
+            ym = (np.ones((Ny-1, Ny-1))*ym_onerow).transpose()
 
-        # derivate along 45-degree shidted coordinates
+            # derivate along 45-degree shidted coordinates
 
-        dIdu = np.subtract(img[0:Nx-1, 1:Ny].astype(float),
-                           img[1:Nx, 0:Ny-1].astype(float))
-        dIdv = np.subtract(img[0:Nx-1, 0:Ny-1].astype(float),
-                           img[1:Nx, 1:Ny].astype(float))
+            dIdu = np.subtract(img[0:Nx-1, 1:Ny].astype(float),
+                            img[1:Nx, 0:Ny-1].astype(float))
+            dIdv = np.subtract(img[0:Nx-1, 0:Ny-1].astype(float),
+                            img[1:Nx, 1:Ny].astype(float))
 
-        # smoothing
-        filter_core = np.ones((3, 3))/9
-        fdu = convolve2d(dIdu, filter_core, mode='same', boundary='fill', fillvalue=0)
-        fdv = convolve2d(dIdv, filter_core, mode='same', boundary='fill', fillvalue=0)
+            # smoothing
+            filter_core = np.ones((3, 3))/9
+            fdu = convolve2d(dIdu, filter_core, mode='same', boundary='fill', fillvalue=0)
+            fdv = convolve2d(dIdv, filter_core, mode='same', boundary='fill', fillvalue=0)
 
-        dImag2 = np.multiply(fdu, fdu)+np.multiply(fdv, fdv)
+            dImag2 = np.multiply(fdu, fdu)+np.multiply(fdv, fdv)
 
-        # slope of the gradient
-        m = np.divide(-(fdv + fdu), (fdu-fdv))
+            # slope of the gradient
+            m = np.divide(-(fdv + fdu), (fdu-fdv))
 
-        # if some of values in m is NaN
-        m[np.isnan(m)] = np.divide(dIdv+dIdu, dIdu-dIdv)[np.isnan(m)]
+            # if some of values in m is NaN
+            m[np.isnan(m)] = np.divide(dIdv+dIdu, dIdu-dIdv)[np.isnan(m)]
 
-        # if some of values in m is still NaN
-        m[np.isnan(m)] = 0
+            # if some of values in m is still NaN
+            m[np.isnan(m)] = 0
 
-        # if some of values in m  are inifinite
+            # if some of values in m  are inifinite
 
-        m[np.isinf(m)] = 10*np.max(m)
+            m[np.isinf(m)] = 10*np.max(m)
 
-        # shortband b
-        b = ym - m*xm
+            # shortband b
+            b = ym - m*xm
 
-        # weighting
-        sdI2 = np.sum(dImag2)
+            # weighting
+            sdI2 = np.sum(dImag2)
 
-        xcentroid = np.sum(np.multiply(dImag2, xm))/sdI2
-        ycentroid = np.sum(np.multiply(dImag2, ym))/sdI2
-        w = np.divide(dImag2, np.sqrt(np.multiply(
-            (xm-xcentroid), (xm-xcentroid))+np.multiply((ym-ycentroid), (ym-ycentroid))))
+            xcentroid = np.sum(np.multiply(dImag2, xm))/sdI2
+            ycentroid = np.sum(np.multiply(dImag2, ym))/sdI2
+            w = np.divide(dImag2, np.sqrt(np.multiply(
+                (xm-xcentroid), (xm-xcentroid))+np.multiply((ym-ycentroid), (ym-ycentroid))))
 
-        # least square minimisation
-        xc, yc = ls_radial_center_fit(m, b, w)
+            # least square minimisation
+            xc, yc = ls_radial_center_fit(m, b, w)
 
-        # output replated to upper left coordinate
-        x = xc + (Nx+1)/2  # xc + (Nx+1)/2
-        y = yc + (Ny+1)/2  # yc + (Ny+1)/2
+            # output replated to upper left coordinate
+            x = xc + (Nx+1)/2  # xc + (Nx+1)/2
+            y = yc + (Ny+1)/2  # yc + (Ny+1)/2
 
-        return x, y
+            return x, y
 
     def detect(self, frame: np.ndarray) -> list:
         '''
