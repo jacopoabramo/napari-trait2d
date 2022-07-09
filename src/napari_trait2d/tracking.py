@@ -6,8 +6,8 @@ from dataclasses import dataclass, field
 @dataclass
 class Track(object):
     track_id : int
-    trace_frame: list[np.ndarray]
-    trace: list[list]
+    trace_frame: list
+    trace: list
     skipped_frames: int = field(default=0, init=False)
 
 
