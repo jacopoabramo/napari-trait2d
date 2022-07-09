@@ -8,7 +8,6 @@ Replace code below according to your needs.
 """
 
 import json, csv
-from matplotlib import widgets
 from napari.viewer import Viewer
 from qtpy.QtWidgets import (
     QWidget,
@@ -19,10 +18,15 @@ from qtpy.QtWidgets import (
     QSpinBox,
     QFileDialog,
 )
+from superqt import QEnumComboBox
 from dataclasses import dataclass, fields
 from dacite import from_dict
 from typing import Union, get_type_hints
+from enum import Enum
 
+class SpotEnum(Enum):
+    DARK = "DARK"
+    BRIGHT = "BRIGHT"
 
 @dataclass
 class TRAIT2DParams:
@@ -35,7 +39,11 @@ class TRAIT2DParams:
     min_track_length: int = 1
     resolution: int = 1
     frame_rate: int = 100
+    start_frame: int = 0
+    end_frame: int = 100
+    spot_type: SpotEnum = SpotEnum.BRIGHT
 
+ParamType = Union[int, float, SpotEnum]
 
 class NTRAIT2D(QWidget):
     def __init__(self, viewer: Viewer, parent=None):
@@ -51,20 +59,31 @@ class NTRAIT2D(QWidget):
         )
         self.widgets = {}
 
+        def build_widget(attr: ParamType):
+            widget = None
+            attr_type = type(attr)
+            if attr_type in [int, float]:
+                if attr_type == int:
+                    widget = QSpinBox()
+                else:
+                    widget = QDoubleSpinBox()
+                widget.setRange(0, 2 ** (16) - 1)
+                widget.setValue(attr)
+                signal = widget.valueChanged
+            elif attr_type == SpotEnum:
+                widget = QEnumComboBox(enum_class=SpotEnum)
+                signal = widget.currentEnumChanged
+            else:
+                raise TypeError("Parameter type is unsupported in widget selection.")
+            return widget, signal
+
         self.paramLayout = QFormLayout()
         for field in fields(self.params):
             attr = getattr(self.params, field.name)
-            if type(attr) == int:
-                spinBox = QSpinBox()
-            else:
-                spinBox = QDoubleSpinBox()
-            self.widgets[field.name] = spinBox
+            self.widgets[field.name], signal = build_widget(attr)
+            self.paramLayout.addRow(field.name, self.widgets[field.name])
 
-            # TODO: what's the maximum range expected for each parameter?
-            spinBox.setRange(0, 2 ** (16) - 1)
-            spinBox.setValue(attr)
-            self.paramLayout.addRow(field.name, spinBox)
-            self.widgets[field.name].valueChanged.connect(
+            signal.connect(
                 lambda _, name=field.name: self._update_field(name=name)
             )
 
@@ -78,9 +97,10 @@ class NTRAIT2D(QWidget):
         self.loadFileButton.clicked.connect(self._on_load_clicked)
 
     def _update_field(self, name: str):
-        print(name, self.widgets[name].value())
-        setattr(self.params, name, self.widgets[name].value())
-        print(self.params)
+        if type(getattr(self.params, name)) in [int, float]:
+            setattr(self.params, name, self.widgets[name].value())
+        else: # for QEnumComboBox type
+            setattr(self.params, name, self.widgets[name].currentEnum())
 
     def _on_load_clicked(self):
 
@@ -114,15 +134,11 @@ class NTRAIT2D(QWidget):
                 raise Exception(e)
             for field in fields(self.params):
                 for idx in range(self.paramLayout.rowCount()):
-                    if (
-                        field.name
-                        == self.paramLayout.itemAt(
-                            idx, QFormLayout.ItemRole.LabelRole
-                        )
-                        .widget()
-                        .text()
-                    ):
-                        self.paramLayout.itemAt(
-                            idx, QFormLayout.ItemRole.FieldRole
-                        ).widget().setValue(getattr(self.params, field.name))
+                    if (field.name == self.paramLayout.itemAt(idx, QFormLayout.ItemRole.LabelRole).widget().text()):
+                        widget = self.paramLayout.itemAt(idx, QFormLayout.ItemRole.FieldRole).widget()
+                        attr = getattr(self.params, field.name)
+                        if type(attr) in [int, float]:
+                            widget.setValue(attr)
+                        else:
+                            widget.setCurrentEnum(attr)
                         break
