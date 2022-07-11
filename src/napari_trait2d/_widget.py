@@ -80,9 +80,6 @@ class NTRAIT2D(QWidget):
         self.loadFileButton.clicked.connect(self._on_load_clicked)
         self.runButton.clicked.connect(self._on_run_button_clicked)
 
-        self.detector = Detector(self.params)
-        self.tracker = Tracker(self.params)
-
     def _update_field(self, name: str):
         if type(getattr(self.params, name)) in [int, float]:
             setattr(self.params, name, self.widgets[name].value())
@@ -132,6 +129,9 @@ class NTRAIT2D(QWidget):
     
     def _on_run_button_clicked(self):
 
+        detector = Detector(self.params)
+        tracker = Tracker(self.params)
+
         for layer in self.viewer.layers.selection:
             video = layer.data
 
@@ -147,14 +147,14 @@ class NTRAIT2D(QWidget):
                 if self.params.spot_type == SpotEnum.DARK:
                     frame_img = invert(frame_img)
 
-                centers = self.detector.detect(frame_img)
+                centers = detector.detect(frame_img)
 
                 # tracking
-                self.tracker.update(centers,  frame)
+                tracker.update(centers,  frame)
 
             #add remaining tracks
-            for track in range(0, len(self.tracker.tracks)):
-                self.tracker.complete_tracks.append(self.tracker.tracks[track])
+            for track in range(0, len(tracker.tracks)):
+                tracker.complete_tracks.append(tracker.tracks[track])
             
             # rearrange the data for saving 
             tracks_data=[]
@@ -163,16 +163,16 @@ class NTRAIT2D(QWidget):
         
             data_tracks={}
             trackID=0
-            for track in range(0, len(self.tracker.complete_tracks)):
+            for track in range(0, len(tracker.complete_tracks)):
                 #save trajectories 
                 
                 #if track is long enough:
-                if len(self.tracker.complete_tracks[track].trace) >= self.params.min_track_length:
+                if len(tracker.complete_tracks[track].trace) >= self.params.min_track_length:
                     trackID +=1
                 
                     # check the track for missing detections
-                    frames = self.tracker.complete_tracks[track].trace_frame
-                    trace = self.tracker.complete_tracks[track].trace
+                    frames = tracker.complete_tracks[track].trace_frame
+                    trace = tracker.complete_tracks[track].trace
                     pos = 0
                     new_frames=[]
                     new_trace=[]
@@ -193,48 +193,48 @@ class NTRAIT2D(QWidget):
                             point=trace[pos] # previous frame
                             
                             # define ROI 
-                            data=np.zeros((self.detector.expected_size, self.detector.expected_size))
+                            data=np.zeros((detector.expected_size, detector.expected_size))
                 
                             #start point
-                            start_x=int(point[0] - self.detector.expected_size/2)
-                            start_y=int(point[1] - self.detector.expected_size/2)
+                            start_x=int(point[0] - detector.expected_size/2)
+                            start_y=int(point[1] - detector.expected_size/2)
                             
                             #end point
-                            end_x=int(point[0] + self.detector.expected_size/2)
-                            end_y=int(point[1] + self.detector.expected_size/2)
+                            end_x=int(point[0] + detector.expected_size/2)
+                            end_y=int(point[1] + detector.expected_size/2)
                             
                             x_0 =0
-                            x_1 =self.detector.expected_size
+                            x_1 =detector.expected_size
                             y_0 =0
-                            y_1 =self.detector.expected_size
+                            y_1 =detector.expected_size
                             
                             # define ROI coordinates
                             
                             if start_x<0:
                                 start_x=0
-                                end_x=self.detector.expected_size
+                                end_x=detector.expected_size
                                 
                             if start_y<0:
                                 start_y=0
-                                end_y=self.detector.expected_size
+                                end_y=detector.expected_size
                                 
                             if end_x>frame_img.shape[0]:
                                 end_x=frame_img.shape[0]
-                                start_x=frame_img.shape[0]-self.detector.expected_size
+                                start_x=frame_img.shape[0]-detector.expected_size
                 
                             if end_y>frame_img.shape[1]:
                                 end_y=frame_img.shape[1]
-                                start_y=frame_img.shape[1]-self.detector.expected_size
+                                start_y=frame_img.shape[1]-detector.expected_size
                             
         
                             data[x_0:x_1,y_0:y_1]=frame_img[start_x:end_x, start_y:end_y]
                             
                             # subpixel localisatopm
-                            x,y=self.detector.radialsym_centre(data)
+                            x,y=detector.radialsym_centre(data)
                             
                             # check that the centre is inside of the spot            
-                            if y<self.detector.expected_size and x<self.detector.expected_size and y>=0 and x>=0:               
-                                new_trace.append([x+int(point[0]-self.detector.expected_size/2),y+int(point[1]-self.detector.expected_size/2)])
+                            if y<detector.expected_size and x<detector.expected_size and y>=0 and x>=0:               
+                                new_trace.append([x+int(point[0]-detector.expected_size/2),y+int(point[1]-detector.expected_size/2)])
         
                             else: # if not use the previous point
                                 new_trace.append(trace[pos])                
@@ -246,7 +246,7 @@ class NTRAIT2D(QWidget):
                         tracks_data.append([point[1]*self.params.resolution, point[0]*self.params.resolution, trackID, frame*self.params.frame_rate])
         
                     #save for plotting tracks
-                    data_tracks[self.tracker.complete_tracks[track].track_id] = {
+                    data_tracks[tracker.complete_tracks[track].track_id] = {
                         'trackID': trackID,
                         'trace': new_trace,
                         'frames': new_frames,
