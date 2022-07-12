@@ -133,21 +133,21 @@ class NTRAIT2D(QWidget):
         tracker = Tracker(self.params)
 
         for layer in self.viewer.layers.selection:
-            video = layer.data
+            video : np.ndarray = layer.data
 
-            if video.dtype == 'uint16':      
+            if video.dtype == np.uint16:      
                 video = (video - np.min(video))/(np.max(video) - np.min(video))
                 video = img_as_ubyte(video)
 
             # frame to frame detection and linking loop 
-            for frame in range(self.params.start_frame, np.min((self.params.end_frame + 1, video.shape[0]))):
+            for frame_idx in range(self.params.start_frame, np.min((self.params.end_frame + 1, video.shape[0]))):
                 
                 # detection
-                frame_img=video[frame,:,:]
+                frame = video[frame_idx]
                 if self.params.spot_type == SpotEnum.DARK:
-                    frame_img = invert(frame_img)
+                    frame = invert(frame)
 
-                centers = detector.detect(frame_img)
+                centers = detector.detect(frame)
 
                 # tracking
                 tracker.update(centers,  frame)
@@ -157,11 +157,9 @@ class NTRAIT2D(QWidget):
                 tracker.complete_tracks.append(tracker.tracks[track])
             
             # rearrange the data for saving 
-            tracks_data=[]
-            tracks_data.append(['X', 'Y', 'TrackID',
-                                    't'])
+            tracks_data = ['X', 'Y', 'TrackID', 't']
         
-            data_tracks={}
+            data_tracks = {}
             trackID=0
             for track in range(0, len(tracker.complete_tracks)):
                 #save trajectories 

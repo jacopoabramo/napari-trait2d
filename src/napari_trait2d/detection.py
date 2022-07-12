@@ -3,7 +3,7 @@ import warnings
 from scipy.ndimage import gaussian_laplace
 from scipy.signal import convolve2d
 from skimage.feature import peak_local_max
-from napari_trait2d.common import TRAIT2DParams
+from napari_trait2d.common import Point, TRAIT2DParams
 
 
 class Detector(object):
@@ -130,27 +130,19 @@ class Detector(object):
         Detect vesicles in input image "frame"
         '''
 
-        # Spot enhancing filter
-        self.img_sef, self.binary_sef = self.spot_enhancing_filter(frame)
+        def get_patch(frame: np.ndarray, point: Point, patch_size: int) -> np.ndarray:
 
-        # find local maximum
-        # min distance between peaks and threshold_rel - min value of the peak - in relation to the max value
-        peaks_coor = peak_local_max(self.img_sef, min_distance=self.params.SEF_min_dist, threshold_rel=self.params.SEF_min_peak)
+            x_shape, y_shape = frame.shape
 
-        self.expected_size = self.params.patch_size
-
-        coordinates = []
-        for point in peaks_coor:
-
-            data = np.zeros((self.expected_size, self.expected_size))
+            data = np.zeros((patch_size, patch_size))
 
             # start point
-            start_x = int(point[0]-self.expected_size/2)
-            start_y = int(point[1]-self.expected_size/2)
+            start_x = int(point.x - patch_size/2)
+            start_y = int(point.y - patch_size/2)
 
             # end point
-            end_x = int(point[0]+self.expected_size/2)
-            end_y = int(point[1]+self.expected_size/2)
+            end_x = int(point.x + patch_size/2)
+            end_y = int(point.y + patch_size/2)
 
             x_0 = 0
             x_1 = self.expected_size
@@ -158,31 +150,41 @@ class Detector(object):
             y_1 = self.expected_size
 
             # define ROI coordinates
-
             if start_x < 0:
                 start_x = 0
-                x_0 = int(self.expected_size/2-point[0])
+                x_0 = int(self.expected_size/2 - point.x)
 
             if start_y < 0:
                 start_y = 0
-                y_0 = int(self.expected_size/2-point[1])
+                y_0 = int(self.expected_size/2 - point.y)
 
-            if end_x > frame.shape[0]:
-                end_x = frame.shape[0]
-                x_1 = int(frame.shape[0]-point[0]+self.expected_size/2)
+            if end_x > x_shape:
+                end_x = x_shape
+                x_1 = int(x_shape - point.x + self.expected_size/2)
 
-            if end_y > frame.shape[1]:
-                end_y = frame.shape[1]
-                y_1 = int(frame.shape[1]-point[1]+self.expected_size/2)
+            if end_y > y_shape:
+                end_y = y_shape
+                y_1 = int(y_shape - point.y + self.expected_size/2)
 
-            data[x_0:x_1, y_0:y_1] = frame[start_x:end_x, start_y:end_y]
+            data[x_0 : x_1, y_0 : y_1] = frame[start_x : end_x, start_y : end_y]
 
+            return data
+
+        # Spot enhancing filter
+        self.img_sef, self.binary_sef = self.spot_enhancing_filter(frame)
+
+        # find local maximum
+        # min distance between peaks and threshold_rel - min value of the peak - in relation to the max value
+        peak_coordinates = [Point(x, y) for x, y in peak_local_max(self.img_sef, min_distance=self.params.SEF_min_dist, threshold_rel=self.params.SEF_min_peak)]
+
+        self.expected_size = self.params.patch_size
+
+        coordinates = []
+        for point in peak_coordinates:
             # radial symmetry centers
-            x, y = self.radialsym_centre(data)
+            x, y = self.radialsym_centre(get_patch(frame, point, self.expected_size))
 
             # check that the centre is inside of the spot
             if y < self.expected_size and x < self.expected_size and y >= 0 and x >= 0:
-                coordinates.append(
-                    [x+int(point[0]-self.expected_size/2), y+int(point[1]-self.expected_size/2)])
-
+                coordinates.append(Point(x + int(point.x - self.expected_size/2), y + int(point.y - self.expected_size/2)))
         return coordinates

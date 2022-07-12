@@ -1,6 +1,10 @@
 from dataclasses import dataclass
 from enum import Enum
-from typing import Union
+from typing import Union, NamedTuple
+
+class Point(NamedTuple):
+    x: int
+    y: int
 
 class SpotEnum(Enum):
     DARK = "DARK"
