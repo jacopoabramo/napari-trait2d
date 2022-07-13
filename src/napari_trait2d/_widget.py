@@ -9,6 +9,7 @@ Replace code below according to your needs.
 
 import json, csv
 import numpy as np
+import napari_trait2d.detection as detection
 from skimage.util import invert, img_as_ubyte
 from napari.viewer import Viewer
 from qtpy.QtWidgets import (
@@ -25,7 +26,6 @@ from dataclasses import fields
 from dacite import from_dict
 from typing import get_type_hints
 from napari_trait2d.common import *
-from napari_trait2d.detection import Detector
 from napari_trait2d.tracking import Tracker
 
 class NTRAIT2D(QWidget):
@@ -129,7 +129,6 @@ class NTRAIT2D(QWidget):
     
     def _on_run_button_clicked(self):
 
-        detector = Detector(self.params)
         tracker = Tracker(self.params)
 
         for layer in self.viewer.layers.selection:
@@ -146,11 +145,10 @@ class NTRAIT2D(QWidget):
                 frame = video[frame_idx]
                 if self.params.spot_type == SpotEnum.DARK:
                     frame = invert(frame)
-
-                centers = detector.detect(frame)
+                centers = detection.detect(frame, self.params)
 
                 # tracking
-                tracker.update(centers,  frame)
+                tracker.update(centers, frame)
 
             #add remaining tracks
             for track in range(0, len(tracker.tracks)):
@@ -174,9 +172,9 @@ class NTRAIT2D(QWidget):
                     pos = 0
                     new_frames=[]
                     new_trace=[]
-                    for frame_pos in range(frames[0], frames[-1]+1):
-                        frame=frames[pos]
-                        
+                    for frame_pos in frames:
+                        frame = frames[pos]
+
                         if frame_pos==frame:
                             new_frames.append(frame_pos)
                             new_trace.append(trace[pos])
@@ -187,52 +185,23 @@ class NTRAIT2D(QWidget):
                             frame_img=video[frame_pos,:,:]
                             
                             # find  particle location
+                            point = Point(trace[pos][0], trace[pos][1]) # previous frame
+
+                            data = detection.get_patch(frame_img, point, self.params.patch_size)
                             
-                            point=trace[pos] # previous frame
-                            
-                            # define ROI 
-                            data=np.zeros((detector.expected_size, detector.expected_size))
-                
-                            #start point
-                            start_x=int(point[0] - detector.expected_size/2)
-                            start_y=int(point[1] - detector.expected_size/2)
-                            
-                            #end point
-                            end_x=int(point[0] + detector.expected_size/2)
-                            end_y=int(point[1] + detector.expected_size/2)
-                            
-                            x_0 =0
-                            x_1 =detector.expected_size
-                            y_0 =0
-                            y_1 =detector.expected_size
-                            
-                            # define ROI coordinates
-                            
-                            if start_x<0:
-                                start_x=0
-                                end_x=detector.expected_size
-                                
-                            if start_y<0:
-                                start_y=0
-                                end_y=detector.expected_size
-                                
-                            if end_x>frame_img.shape[0]:
-                                end_x=frame_img.shape[0]
-                                start_x=frame_img.shape[0]-detector.expected_size
-                
-                            if end_y>frame_img.shape[1]:
-                                end_y=frame_img.shape[1]
-                                start_y=frame_img.shape[1]-detector.expected_size
-                            
-        
-                            data[x_0:x_1,y_0:y_1]=frame_img[start_x:end_x, start_y:end_y]
-                            
-                            # subpixel localisatopm
-                            x,y=detector.radialsym_centre(data)
+                            # subpixel localization
+                            subpix = detection.radialsym_centre(data)
                             
                             # check that the centre is inside of the spot            
-                            if y<detector.expected_size and x<detector.expected_size and y>=0 and x>=0:               
-                                new_trace.append([x+int(point[0]-detector.expected_size/2),y+int(point[1]-detector.expected_size/2)])
+                            if (subpix.y < self.params.patch_size and 
+                                subpix.x < self.params.patch_size and 
+                                subpix.y >= 0 and 
+                                subpix.x >= 0):
+                                new_trace.append(
+                                Point(
+                                    subpix.x + int(point.x - self.params.patch_size/2), 
+                                    subpix.y + int(point.y - self.params.patch_size/2))
+                                )
         
                             else: # if not use the previous point
                                 new_trace.append(trace[pos])                

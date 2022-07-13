@@ -3,8 +3,8 @@ from enum import Enum
 from typing import Union, NamedTuple
 
 class Point(NamedTuple):
-    x: int
-    y: int
+    x: Union[int, float]
+    y: Union[int, float]
 
 class SpotEnum(Enum):
     DARK = "DARK"

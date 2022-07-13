@@ -3,12 +3,14 @@ from scipy.optimize import linear_sum_assignment
 from napari_trait2d.common import TRAIT2DParams
 from dataclasses import dataclass, field
 
-@dataclass
 class Track(object):
-    track_id : int
-    trace_frame: list
-    trace: list
-    skipped_frames: int = field(default=0, init=False)
+
+    def __init__(self, first_point, first_frame, track_id_count):
+
+        self.track_id = track_id_count  # track ID
+        self.trace_frame = [first_frame]  # frame
+        self.skipped_frames = 0  # number of frames skipped undetected
+        self.trace = [first_point]  # trace path
 
 
 class Tracker(object):
@@ -63,10 +65,10 @@ class Tracker(object):
         main linking function
         '''
 
-        # create tracks if no tracks  found
+        # create tracks if no tracks found
         if (len(self.tracks) == 0):
-            for i in range(len(detections)):
-                track = Track(track_id=self.track_id_count, trace_frame=[frame], trace=[detections[i]])
+            for detection in detections:
+                track = Track(first_point=detection, first_frame=frame, track_id_count=self.track_id_count)
                 self.track_id_count += 1
                 self.tracks.append(track)
 
@@ -116,13 +118,12 @@ class Tracker(object):
 
             del_tracks = []  # list of tracks to delete
 
-        # remove tracks which have too many skipped frames
+            # remove tracks which have too many skipped frames
             for i in range(len(self.tracks)):
                 if (self.tracks[i].skipped_frames > self.params.link_frame_gap):
                     del_tracks.append(i)
 
-        # delete track
-
+            # delete track
             if len(del_tracks) > 0:
 
                 val_compensate_for_del = 0

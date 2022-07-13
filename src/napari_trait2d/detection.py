@@ -5,186 +5,158 @@ from scipy.signal import convolve2d
 from skimage.feature import peak_local_max
 from napari_trait2d.common import Point, TRAIT2DParams
 
+def get_patch(frame: np.ndarray, point: Point, patch_size: int) -> np.ndarray:
+    x_shape, y_shape = frame.shape
 
-class Detector(object):
-    """
-    Detector class for particle detection and sub-pixel localization.
-    """
-    def __init__(self, parameters: TRAIT2DParams):
-        self.params = parameters
-        self.img_sef = []
-        self.binary_sef = []
+    data = np.zeros((patch_size, patch_size))
+
+    # start point
+    start_x = int(point.x - patch_size/2)
+    start_y = int(point.y - patch_size/2)
+
+    # end point
+    end_x = int(point.x + patch_size/2)
+    end_y = int(point.y + patch_size/2)
+
+    x_0, x_1 = 0, patch_size
+    y_0, y_1 = 0, patch_size
+
+    # define ROI coordinates
+    if start_x < 0:
+        start_x = 0
+        x_0 = int(patch_size/2 - point.x)
+
+    if start_y < 0:
+        start_y = 0
+        y_0 = int(patch_size/2 - point.y)
+
+    if end_x > x_shape:
+        end_x = x_shape
+        x_1 = int(x_shape - point.x + patch_size/2)
+
+    if end_y > y_shape:
+        end_y = y_shape
+        y_1 = int(y_shape - point.y + patch_size/2)
+
+    data[x_0 : x_1, y_0 : y_1] = frame[start_x : end_x, start_y : end_y]
+
+    return data
+
+def ls_radial_center_fit(m: np.ndarray, b: np.ndarray, w: np.ndarray):
+    '''
+    least squares solution to determine the radial symmetry center
+    '''
+    wm2p1 = np.divide(w, (np.multiply(m, m)+1))
+    sw = np.sum(wm2p1)
+    smmw = np.sum(np.multiply(np.multiply(m, m), wm2p1))
+    smw = np.sum(np.multiply(m, wm2p1))
+    smbw = np.sum(np.multiply(np.multiply(m, b), wm2p1))
+    sbw = np.sum(np.multiply(b, wm2p1))
+    det = smw*smw - smmw*sw
+    xc = (smbw*sw - smw*sbw)/det  # relative to image center
+    yc = (smbw*smw - smmw*sbw)/det  # relative to image center
+
+    return xc, yc
+
+def spot_enhancing_filter(img: np.ndarray, sigma: int, threshold: float) -> tuple:
+    '''
+    Spot enhancing filter implementation.
+    '''
+    img_filtered = img*np.ones(img.shape)
+
+    # calculate laplacian of gaussian
+    img_sef1 = gaussian_laplace(img_filtered, sigma)
     
-    def spot_enhancing_filter(self, img: np.ndarray) -> tuple:
-        '''
-        Spot enhancing filter implementation.
-        '''
-        img_filtered = img*np.ones(img.shape)
+    # remove negative values keeping the proportion b/w pixels
+    img_sef1 = abs(img_sef1-np.abs(np.max(img_sef1)))
 
-        # calculate laplacian of gaussian
-        img_sef1 = gaussian_laplace(img_filtered, self.params.SEF_sigma)
-        
-        # remove negative values keeping the proportion b/w pixels
-        img_sef1 = abs(img_sef1-np.abs(np.max(img_sef1)))
+    # thresholding
+    img_threshold = np.mean(img_sef1) + threshold*np.std(img_sef1)  # calculate threshold value
+    img_sef = np.copy(img_sef1)  # copy the image
+    img_sef[img_sef < img_threshold] = 0  # thresholding
 
-        # thresholding
-        th = np.mean(img_sef1) + self.params.SEF_threshold*np.std(img_sef1)  # calculate threshold value
-        img_sef = np.copy(img_sef1)  # copy the image
-        img_sef[img_sef < th] = 0  # thresholding
+    return img_sef
 
-        # create a binary mask for the next step
-        img_sef_bin = np.copy(img_sef)
-        img_sef_bin[img_sef_bin < th] = 0
-        img_sef_bin[img_sef_bin >= th] = 1
+def radialsym_centre(img: np.ndarray) -> Point:
+    '''
+    Calculates the center of a 2D intensity distribution (calculation of radial symmetry centers)  
 
-        return img_sef, img_sef_bin
-    
-    def radialsym_centre(self, img: np.ndarray) -> list:
-        '''
-        Calculates the center of a 2D intensity distribution (calculation of radial symmetry centers)  
+    '''
+    # GRID
+    # number of grid points
+    Ny, Nx = img.shape
 
-        '''
+    # for x
+    val = int((Nx-1)/2.0-0.5)
+    xm_onerow = np.asarray(range(-val, val+1))
+    xm = np.ones((Nx-1, Nx-1))*xm_onerow
 
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            
-            def ls_radial_center_fit(m, b, w):
-                '''
-                least squares solution to determine the radial symmetry center
-                '''
-                wm2p1 = np.divide(w, (np.multiply(m, m)+1))
-                sw = np.sum(wm2p1)
-                smmw = np.sum(np.multiply(np.multiply(m, m), wm2p1))
-                smw = np.sum(np.multiply(m, wm2p1))
-                smbw = np.sum(np.multiply(np.multiply(m, b), wm2p1))
-                sbw = np.sum(np.multiply(b, wm2p1))
-                det = smw*smw - smmw*sw
-                xc = (smbw*sw - smw*sbw)/det  # relative to image center
-                yc = (smbw*smw - smmw*sbw)/det  # relative to image center
+    # for y
+    val = int((Ny-1)/2.0-0.5)
+    ym_onerow = np.asarray(range(-val, val+1))
+    ym = (np.ones((Ny-1, Ny-1))*ym_onerow).transpose()
 
-                return xc, yc
+    # derivate along 45-degree shidted coordinates
 
-            # GRID
-            # number of grid points
-            Ny, Nx = img.shape
+    dIdu = np.subtract(img[0:Nx-1, 1:Ny].astype(float), img[1:Nx, 0:Ny-1].astype(float))
+    dIdv = np.subtract(img[0:Nx-1, 0:Ny-1].astype(float), img[1:Nx, 1:Ny].astype(float))
 
-            # for x
-            val = int((Nx-1)/2.0-0.5)
-            xm_onerow = np.asarray(range(-val, val+1))
-            xm = np.ones((Nx-1, Nx-1))*xm_onerow
+    # smoothing
+    filter_core = np.ones((3, 3))/9
+    fdu = convolve2d(dIdu, filter_core, mode='same', boundary='fill', fillvalue=0)
+    fdv = convolve2d(dIdv, filter_core, mode='same', boundary='fill', fillvalue=0)
 
-            # for y
-            val = int((Ny-1)/2.0-0.5)
-            ym_onerow = np.asarray(range(-val, val+1))
-            ym = (np.ones((Ny-1, Ny-1))*ym_onerow).transpose()
+    dImag2 = np.multiply(fdu, fdu)+np.multiply(fdv, fdv)
 
-            # derivate along 45-degree shidted coordinates
+    # slope of the gradient
+    m = np.divide(-(fdv + fdu), (fdu-fdv))
 
-            dIdu = np.subtract(img[0:Nx-1, 1:Ny].astype(float),
-                            img[1:Nx, 0:Ny-1].astype(float))
-            dIdv = np.subtract(img[0:Nx-1, 0:Ny-1].astype(float),
-                            img[1:Nx, 1:Ny].astype(float))
+    # if some of values in m is NaN
+    m[np.isnan(m)] = np.divide(dIdv+dIdu, dIdu-dIdv)[np.isnan(m)]
 
-            # smoothing
-            filter_core = np.ones((3, 3))/9
-            fdu = convolve2d(dIdu, filter_core, mode='same', boundary='fill', fillvalue=0)
-            fdv = convolve2d(dIdv, filter_core, mode='same', boundary='fill', fillvalue=0)
+    # if some of values in m is still NaN
+    m[np.isnan(m)] = 0
 
-            dImag2 = np.multiply(fdu, fdu)+np.multiply(fdv, fdv)
+    # if some of values in m  are inifinite
 
-            # slope of the gradient
-            m = np.divide(-(fdv + fdu), (fdu-fdv))
+    m[np.isinf(m)] = 10*np.max(m)
 
-            # if some of values in m is NaN
-            m[np.isnan(m)] = np.divide(dIdv+dIdu, dIdu-dIdv)[np.isnan(m)]
+    # shortband b
+    b = ym - m*xm
 
-            # if some of values in m is still NaN
-            m[np.isnan(m)] = 0
+    # weighting
+    sdI2 = np.sum(dImag2)
 
-            # if some of values in m  are inifinite
+    xcentroid = np.sum(np.multiply(dImag2, xm))/sdI2
+    ycentroid = np.sum(np.multiply(dImag2, ym))/sdI2
+    w = np.divide(dImag2, np.sqrt(np.multiply((xm-xcentroid), (xm-xcentroid))+np.multiply((ym-ycentroid), (ym-ycentroid))))
 
-            m[np.isinf(m)] = 10*np.max(m)
+    # least square minimisation
+    xc, yc = ls_radial_center_fit(m, b, w)
 
-            # shortband b
-            b = ym - m*xm
+    # output replated to upper left coordinate
+    x = xc + (Nx+1)/2  # xc + (Nx+1)/2
+    y = yc + (Ny+1)/2  # yc + (Ny+1)/2
 
-            # weighting
-            sdI2 = np.sum(dImag2)
+    return Point(x, y)
 
-            xcentroid = np.sum(np.multiply(dImag2, xm))/sdI2
-            ycentroid = np.sum(np.multiply(dImag2, ym))/sdI2
-            w = np.divide(dImag2, np.sqrt(np.multiply(
-                (xm-xcentroid), (xm-xcentroid))+np.multiply((ym-ycentroid), (ym-ycentroid))))
+def detect(frame: np.ndarray, params: TRAIT2DParams) -> list:
+    '''
+    Detect vesicles in input image "frame"
+    '''
+    # Spot enhancing filter
+    img_sef = spot_enhancing_filter(frame, params.SEF_sigma, params.SEF_threshold)
 
-            # least square minimisation
-            xc, yc = ls_radial_center_fit(m, b, w)
+    # find local maximum
+    # min distance between peaks and threshold_rel - min value of the peak - in relation to the max value
+    peak_coordinates = [Point(x, y) for x, y in peak_local_max(img_sef, min_distance=params.SEF_min_dist, threshold_rel=params.SEF_min_peak)]
 
-            # output replated to upper left coordinate
-            x = xc + (Nx+1)/2  # xc + (Nx+1)/2
-            y = yc + (Ny+1)/2  # yc + (Ny+1)/2
+    coordinates = []
+    for point in peak_coordinates:
+        # radial symmetry centers
+        x, y = radialsym_centre(get_patch(frame, point, params.patch_size))
 
-            return x, y
-
-    def detect(self, frame: np.ndarray) -> list:
-        '''
-        Detect vesicles in input image "frame"
-        '''
-
-        def get_patch(frame: np.ndarray, point: Point, patch_size: int) -> np.ndarray:
-
-            x_shape, y_shape = frame.shape
-
-            data = np.zeros((patch_size, patch_size))
-
-            # start point
-            start_x = int(point.x - patch_size/2)
-            start_y = int(point.y - patch_size/2)
-
-            # end point
-            end_x = int(point.x + patch_size/2)
-            end_y = int(point.y + patch_size/2)
-
-            x_0 = 0
-            x_1 = self.expected_size
-            y_0 = 0
-            y_1 = self.expected_size
-
-            # define ROI coordinates
-            if start_x < 0:
-                start_x = 0
-                x_0 = int(self.expected_size/2 - point.x)
-
-            if start_y < 0:
-                start_y = 0
-                y_0 = int(self.expected_size/2 - point.y)
-
-            if end_x > x_shape:
-                end_x = x_shape
-                x_1 = int(x_shape - point.x + self.expected_size/2)
-
-            if end_y > y_shape:
-                end_y = y_shape
-                y_1 = int(y_shape - point.y + self.expected_size/2)
-
-            data[x_0 : x_1, y_0 : y_1] = frame[start_x : end_x, start_y : end_y]
-
-            return data
-
-        # Spot enhancing filter
-        self.img_sef, self.binary_sef = self.spot_enhancing_filter(frame)
-
-        # find local maximum
-        # min distance between peaks and threshold_rel - min value of the peak - in relation to the max value
-        peak_coordinates = [Point(x, y) for x, y in peak_local_max(self.img_sef, min_distance=self.params.SEF_min_dist, threshold_rel=self.params.SEF_min_peak)]
-
-        self.expected_size = self.params.patch_size
-
-        coordinates = []
-        for point in peak_coordinates:
-            # radial symmetry centers
-            x, y = self.radialsym_centre(get_patch(frame, point, self.expected_size))
-
-            # check that the centre is inside of the spot
-            if y < self.expected_size and x < self.expected_size and y >= 0 and x >= 0:
-                coordinates.append(Point(x + int(point.x - self.expected_size/2), y + int(point.y - self.expected_size/2)))
-        return coordinates
+        # check that the centre is inside of the spot
+        if y < params.patch_size and x < params.patch_size and y >= 0 and x >= 0:
+            coordinates.append(Point(x + int(point.x - params.patch_size/2), y + int(point.y - params.patch_size/2)))
+    return coordinates
