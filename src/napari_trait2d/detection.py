@@ -68,7 +68,7 @@ def spot_enhancing_filter(img: np.ndarray, sigma: int, threshold: float) -> tupl
     img_sef1 = gaussian_laplace(img_filtered, sigma)
     
     # remove negative values keeping the proportion b/w pixels
-    img_sef1 = abs(img_sef1-np.abs(np.max(img_sef1)))
+    img_sef1 = abs(img_sef1 - np.abs(np.max(img_sef1)))
 
     # thresholding
     img_threshold = np.mean(img_sef1) + threshold*np.std(img_sef1)  # calculate threshold value

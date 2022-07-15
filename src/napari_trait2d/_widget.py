@@ -26,7 +26,7 @@ from dataclasses import fields
 from dacite import from_dict
 from typing import get_type_hints
 from napari_trait2d.common import *
-from napari_trait2d.tracking import Tracker
+from napari_trait2d.tracking import NewTracker
 
 class NTRAIT2D(QWidget):
     def __init__(self, viewer: Viewer, parent=None):
@@ -129,108 +129,114 @@ class NTRAIT2D(QWidget):
     
     def _on_run_button_clicked(self):
 
-        tracker = Tracker(self.params)
-
         for layer in self.viewer.layers.selection:
             video : np.ndarray = layer.data
+            tracker = NewTracker(self.params)
 
-            if video.dtype == np.uint16:      
+            if video.dtype != np.uint8:
                 video = (video - np.min(video))/(np.max(video) - np.min(video))
                 video = img_as_ubyte(video)
 
+            tracking_length = np.min(self.params.end_frame, video.shape[0])
+
             # frame to frame detection and linking loop 
-            for frame_idx in range(self.params.start_frame, np.min((self.params.end_frame + 1, video.shape[0]))):
+            for frame_idx in range(self.params.start_frame, tracking_length):
                 
-                # detection
+                # detect particles on specific frame
+                # using stored parameters
                 frame = video[frame_idx]
                 if self.params.spot_type == SpotEnum.DARK:
                     frame = invert(frame)
                 centers = detection.detect(frame, self.params)
 
-                # tracking
-                tracker.update(centers, frame)
-
-            #add remaining tracks
-            for track in range(0, len(tracker.tracks)):
-                tracker.complete_tracks.append(tracker.tracks[track])
+                # track detected particles
+                tracker.update(centers, frame_idx)
+            
+            # set complete tracks found so far
+            tracker.complete_tracks.update(tracker.tracks)
             
             # rearrange the data for saving 
             tracks_data = ['X', 'Y', 'TrackID', 't']
         
             data_tracks = {}
             trackID=0
-            for track in range(0, len(tracker.complete_tracks)):
-                #save trajectories 
-                
-                #if track is long enough:
-                if len(tracker.complete_tracks[track].trace) >= self.params.min_track_length:
-                    trackID +=1
-                
-                    # check the track for missing detections
-                    frames = tracker.complete_tracks[track].trace_frame
-                    trace = tracker.complete_tracks[track].trace
-                    pos = 0
-                    new_frames=[]
-                    new_trace=[]
-                    for frame_pos in frames:
-                        frame = frames[pos]
 
-                        if frame_pos==frame:
-                            new_frames.append(frame_pos)
-                            new_trace.append(trace[pos])
-                            pos=pos+1
-                            
-                        else:
-                            new_frames.append(frame_pos)
-                            frame_img=video[frame_pos,:,:]
-                            
-                            # find  particle location
-                            point = Point(trace[pos][0], trace[pos][1]) # previous frame
+            for track_id, track in tracker.complete_tracks.items():
+                if len(track.trace) >= self.params.min_track_length:
+                    pass
 
-                            data = detection.get_patch(frame_img, point, self.params.patch_size)
+            # for track in range(0, len(tracker.complete_tracks)):
+            #     #save trajectories 
+                
+            #     #if track is long enough:
+            #     if len(tracker.complete_tracks[track].trace) >= self.params.min_track_length:
+            #         trackID +=1
+                
+            #         # check the track for missing detections
+            #         frames = tracker.complete_tracks[track].trace_frame
+            #         trace = tracker.complete_tracks[track].trace
+            #         pos = 0
+            #         new_frames=[]
+            #         new_trace=[]
+            #         for frame_pos in frames:
+            #             frame = frames[pos]
+
+            #             if frame_pos==frame:
+            #                 new_frames.append(frame_pos)
+            #                 new_trace.append(trace[pos])
+            #                 pos=pos+1
                             
-                            # subpixel localization
-                            subpix = detection.radialsym_centre(data)
+            #             else:
+            #                 new_frames.append(frame_pos)
+            #                 frame_img=video[frame_pos,:,:]
                             
-                            # check that the centre is inside of the spot            
-                            if (subpix.y < self.params.patch_size and 
-                                subpix.x < self.params.patch_size and 
-                                subpix.y >= 0 and 
-                                subpix.x >= 0):
-                                new_trace.append(
-                                Point(
-                                    subpix.x + int(point.x - self.params.patch_size/2), 
-                                    subpix.y + int(point.y - self.params.patch_size/2))
-                                )
+            #                 # find  particle location
+            #                 point = Point(trace[pos][0], trace[pos][1]) # previous frame
+
+            #                 data = detection.get_patch(frame_img, point, self.params.patch_size)
+                            
+            #                 # subpixel localization
+            #                 subpix = detection.radialsym_centre(data)
+                            
+            #                 # check that the centre is inside of the spot            
+            #                 if (subpix.y < self.params.patch_size and 
+            #                     subpix.x < self.params.patch_size and 
+            #                     subpix.y >= 0 and 
+            #                     subpix.x >= 0):
+            #                     new_trace.append(
+            #                     Point(
+            #                         subpix.x + int(point.x - self.params.patch_size/2), 
+            #                         subpix.y + int(point.y - self.params.patch_size/2))
+            #                     )
         
-                            else: # if not use the previous point
-                                new_trace.append(trace[pos])                
+            #                 else: # if not use the previous point
+            #                     new_trace.append(trace[pos])                
                     
                     
-                    for pos in range(0, len(new_trace)):
-                        point=new_trace[pos]
-                        frame=new_frames[pos]
-                        tracks_data.append([point[1]*self.params.resolution, point[0]*self.params.resolution, trackID, frame*self.params.frame_rate])
+            #         for pos in range(0, len(new_trace)):
+            #             point=new_trace[pos]
+            #             frame=new_frames[pos]
+            #             tracks_data.append([point[1]*self.params.resolution, point[0]*self.params.resolution, trackID, frame*self.params.frame_rate])
         
-                    #save for plotting tracks
-                    data_tracks[tracker.complete_tracks[track].track_id] = {
-                        'trackID': trackID,
-                        'trace': new_trace,
-                        'frames': new_frames,
-                        'skipped_frames': 0
-                    }
+            #         #save for plotting tracks
+            #         data_tracks[tracker.complete_tracks[track].track_id] = {
+            #             'trackID': trackID,
+            #             'trace': new_trace,
+            #             'frames': new_frames,
+            #             'skipped_frames': 0
+            #         }
 
-            filepath, _ = QFileDialog.getSaveFileName(
-                caption="Save TRAIT2D tracks",
-                filter="CSV (*.csv)",
-            )
-            if filepath:   
-                if not(filepath.endswith(".csv")):
-                    filepath += ".csv"
+            # filepath, _ = QFileDialog.getSaveFileName(
+            #     caption="Save TRAIT2D tracks",
+            #     filter="CSV (*.csv)",
+            # )
+            # if filepath:   
+            #     if not(filepath.endswith(".csv")):
+            #         filepath += ".csv"
         
                 
-                with open(filepath, 'w') as csv_file:
-                    writer = csv.writer(csv_file)
-                    writer.writerows(tracks_data)
+            #     with open(filepath, 'w') as csv_file:
+            #         writer = csv.writer(csv_file)
+            #         writer.writerows(tracks_data)
         
-                csv_file.close()
+            #     csv_file.close()
