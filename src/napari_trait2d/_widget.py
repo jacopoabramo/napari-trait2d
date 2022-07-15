@@ -137,7 +137,7 @@ class NTRAIT2D(QWidget):
                 video = (video - np.min(video))/(np.max(video) - np.min(video))
                 video = img_as_ubyte(video)
 
-            tracking_length = np.min(self.params.end_frame, video.shape[0])
+            tracking_length = min(self.params.end_frame, video.shape[0])
 
             # frame to frame detection and linking loop 
             for frame_idx in range(self.params.start_frame, tracking_length):
@@ -155,88 +155,65 @@ class NTRAIT2D(QWidget):
             # set complete tracks found so far
             tracker.complete_tracks.update(tracker.tracks)
             
-            # rearrange the data for saving 
-            tracks_data = ['X', 'Y', 'TrackID', 't']
-        
-            data_tracks = {}
-            trackID=0
+            # rearrange the data for saving
+            # first element of the list
+            # is a list of header names
+            tracking_data = [['X', 'Y', 'Track ID', 't']]
 
             for track_id, track in tracker.complete_tracks.items():
                 if len(track.trace) >= self.params.min_track_length:
-                    pass
-
-            # for track in range(0, len(tracker.complete_tracks)):
-            #     #save trajectories 
-                
-            #     #if track is long enough:
-            #     if len(tracker.complete_tracks[track].trace) >= self.params.min_track_length:
-            #         trackID +=1
-                
-            #         # check the track for missing detections
-            #         frames = tracker.complete_tracks[track].trace_frame
-            #         trace = tracker.complete_tracks[track].trace
-            #         pos = 0
-            #         new_frames=[]
-            #         new_trace=[]
-            #         for frame_pos in frames:
-            #             frame = frames[pos]
-
-            #             if frame_pos==frame:
-            #                 new_frames.append(frame_pos)
-            #                 new_trace.append(trace[pos])
-            #                 pos=pos+1
+                    new_frame_trace = []
+                    new_trace = []
+                    frame_position = 0
+                    for frame_idx, trace_point in zip(track.trace_frame, track.trace):
+                        # if frame is already present in the frame trace,
+                        # just add it to the new list and add the point too
+                        if frame_position == frame_idx:
+                            new_frame_trace.append(frame_idx)
+                            new_trace.append(trace_point)
+                            frame_position += 1
+                        else:
+                            # if the frame position is incoherent with the frame trace,
+                            # we try again in finding the particle
+                            new_frame_trace.append(frame_idx)
+                            frame = video[frame_idx]
                             
-            #             else:
-            #                 new_frames.append(frame_pos)
-            #                 frame_img=video[frame_pos,:,:]
-                            
-            #                 # find  particle location
-            #                 point = Point(trace[pos][0], trace[pos][1]) # previous frame
+                            x, y = detection.radialsym_centre(
+                                detection.get_patch(frame, trace_point, self.params.patch_size)
+                            )
+                            subpix = Point(x, y)
 
-            #                 data = detection.get_patch(frame_img, point, self.params.patch_size)
-                            
-            #                 # subpixel localization
-            #                 subpix = detection.radialsym_centre(data)
-                            
-            #                 # check that the centre is inside of the spot            
-            #                 if (subpix.y < self.params.patch_size and 
-            #                     subpix.x < self.params.patch_size and 
-            #                     subpix.y >= 0 and 
-            #                     subpix.x >= 0):
-            #                     new_trace.append(
-            #                     Point(
-            #                         subpix.x + int(point.x - self.params.patch_size/2), 
-            #                         subpix.y + int(point.y - self.params.patch_size/2))
-            #                     )
-        
-            #                 else: # if not use the previous point
-            #                     new_trace.append(trace[pos])                
-                    
-                    
-            #         for pos in range(0, len(new_trace)):
-            #             point=new_trace[pos]
-            #             frame=new_frames[pos]
-            #             tracks_data.append([point[1]*self.params.resolution, point[0]*self.params.resolution, trackID, frame*self.params.frame_rate])
-        
-            #         #save for plotting tracks
-            #         data_tracks[tracker.complete_tracks[track].track_id] = {
-            #             'trackID': trackID,
-            #             'trace': new_trace,
-            #             'frames': new_frames,
-            #             'skipped_frames': 0
-            #         }
-
-            # filepath, _ = QFileDialog.getSaveFileName(
-            #     caption="Save TRAIT2D tracks",
-            #     filter="CSV (*.csv)",
-            # )
-            # if filepath:   
-            #     if not(filepath.endswith(".csv")):
-            #         filepath += ".csv"
+                            if (subpix.y < self.params.patch_size and 
+                                subpix.x < self.params.patch_size and 
+                                subpix.y >= 0 and 
+                                subpix.x >= 0):
+                                new_trace.append(
+                                Point(
+                                    subpix.x + int(trace_point.x - self.params.patch_size/2), 
+                                    subpix.y + int(trace_point.y - self.params.patch_size/2))
+                                )
+                            else:
+                                # otherwise use previous point
+                                new_trace.append(track.trace[frame_position])
+                    tracking_data.append(
+                        [
+                            [point.x, point.y, track_id, frame*track_id, frame_idx*self.params.frame_rate] 
+                            for point in new_trace
+                            for frame_idx in new_frame_trace
+                        ]
+                    )
+            
+            filepath, _ = QFileDialog.getSaveFileName(
+                caption="Save TRAIT2D tracks",
+                filter="CSV (*.csv)",
+            )
+            if filepath:   
+                if not(filepath.endswith(".csv")):
+                    filepath += ".csv"
         
                 
-            #     with open(filepath, 'w') as csv_file:
-            #         writer = csv.writer(csv_file)
-            #         writer.writerows(tracks_data)
+                with open(filepath, 'w') as csv_file:
+                    writer = csv.writer(csv_file)
+                    writer.writerows(tracking_data)
         
-            #     csv_file.close()
+                csv_file.close()
