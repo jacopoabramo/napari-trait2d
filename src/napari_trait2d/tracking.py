@@ -16,7 +16,7 @@ class Track:
         self.trace = [self.first_point]
         self.trace_frame = [self.first_frame_idx]
 
-class NewTracker:
+class Tracker:
     def __init__(self, parameters: TRAIT2DParams) -> None:
         self.params = parameters
         self.tracks : dict = {}

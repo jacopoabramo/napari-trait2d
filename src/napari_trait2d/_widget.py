@@ -28,7 +28,7 @@ from dataclasses import fields
 from dacite import from_dict
 from typing import get_type_hints
 from napari_trait2d.common import *
-from napari_trait2d.tracking import NewTracker
+from napari_trait2d.tracking import Tracker
 
 class NTRAIT2D(QWidget):
     def __init__(self, viewer: Viewer, parent=None):
@@ -72,15 +72,18 @@ class NTRAIT2D(QWidget):
                 lambda _, name=field.name: self._update_field(name=name)
             )
 
-        self.runButton = QPushButton("Run tracking")
+        self.trackButton = QPushButton("Track particles")
+        self.trackAndStoreButton = QPushButton("Track and store")
 
         self.mainLayout.addLayout(self.fileLayout)
         self.mainLayout.addLayout(self.paramLayout)
-        self.mainLayout.addWidget(self.runButton)
+        self.mainLayout.addWidget(self.trackButton)
+        self.mainLayout.addWidget(self.trackAndStoreButton)
         self.setLayout(self.mainLayout)
 
         self.loadFileButton.clicked.connect(self._on_load_clicked)
-        self.runButton.clicked.connect(self._on_run_tracking_clicked)
+        self.trackButton.clicked.connect(lambda: self._on_run_tracking_clicked(False))
+        self.trackAndStoreButton.clicked.connect(lambda: self._on_run_tracking_clicked(True))
 
     def _update_field(self, name: str):
         if type(getattr(self.params, name)) in [int, float]:
@@ -129,11 +132,11 @@ class NTRAIT2D(QWidget):
                             widget.setCurrentEnum(attr)
                         break
     
-    def _on_run_tracking_clicked(self):
+    def _on_run_tracking_clicked(self, store: bool):
 
         for layer in self.viewer.layers.selection:
             video : np.ndarray = layer.data
-            tracker = NewTracker(self.params)
+            tracker = Tracker(self.params)
 
             if video.dtype != np.uint8:
                 video = (video - np.min(video))/(np.max(video) - np.min(video))
@@ -203,6 +206,8 @@ class NTRAIT2D(QWidget):
                     
                     for point, frame_idx in zip(new_trace, new_frame_trace):
                         tracking_data.append(
+                            # we are swapping x and y
+                            # due to how the video stack is arranged
                             [
                                 point.y*self.params.resolution,
                                 point.x*self.params.resolution,
@@ -215,14 +220,36 @@ class NTRAIT2D(QWidget):
                     new_frame_trace.clear()
                     new_trace.clear()
             
-            filepath, _ = QFileDialog.getSaveFileName(
-                caption="Save TRAIT2D tracks",
-                filter="CSV (*.csv)",
-            )
-            if filepath:   
-                if not(filepath.endswith(".csv")):
-                    filepath += ".csv"
+            if store:
+                filepath, _ = QFileDialog.getSaveFileName(
+                    caption="Save TRAIT2D tracks",
+                    filter="CSV (*.csv)",
+                )
+                if filepath:   
+                    if not(filepath.endswith(".csv")):
+                        filepath += ".csv"
 
-                with open(filepath, 'w') as csv_file:
-                    writer = csv.writer(csv_file)
-                    writer.writerows(tracking_data)
+                    with open(filepath, 'w') as csv_file:
+                        writer = csv.writer(csv_file)
+                        writer.writerows(tracking_data)
+            else:
+                # we create a Track layer with the 
+                # detected coordinates;
+                # data is arranged as follows: ['X', 'Y', 'Track ID', 't']
+                # we must reshape it as ['Track ID', 't', 'Y', 'X']
+                # the 't' parameter is multiplied for the parameters frame rate
+                # so we must divide it
+                points = np.array([
+                    [
+                        data[2] - 1, int(data[3]/self.params.frame_rate), data[1], data[0]
+                    ]
+                    for data in tracking_data 
+                    if type(data[0]) != str and type(data[1]) != str
+                ])
+
+                self.viewer.add_tracks(
+                    name=layer.name + "_tracks",
+                    data=points,
+                    tail_length=points.shape[-1],
+                    tail_width=3,
+                )
