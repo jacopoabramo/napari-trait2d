@@ -7,6 +7,8 @@ see: https://napari.org/plugins/guides.html?#widgets
 Replace code below according to your needs.
 """
 
+from pprint import pprint
+
 import json, csv
 import numpy as np
 import napari_trait2d.detection as detection
@@ -78,7 +80,7 @@ class NTRAIT2D(QWidget):
         self.setLayout(self.mainLayout)
 
         self.loadFileButton.clicked.connect(self._on_load_clicked)
-        self.runButton.clicked.connect(self._on_run_button_clicked)
+        self.runButton.clicked.connect(self._on_run_tracking_clicked)
 
     def _update_field(self, name: str):
         if type(getattr(self.params, name)) in [int, float]:
@@ -127,7 +129,7 @@ class NTRAIT2D(QWidget):
                             widget.setCurrentEnum(attr)
                         break
     
-    def _on_run_button_clicked(self):
+    def _on_run_tracking_clicked(self):
 
         for layer in self.viewer.layers.selection:
             video : np.ndarray = layer.data
@@ -138,6 +140,7 @@ class NTRAIT2D(QWidget):
                 video = img_as_ubyte(video)
 
             tracking_length = min(self.params.end_frame, video.shape[0])
+            print(f"tracking length: {tracking_length}")
 
             # frame to frame detection and linking loop 
             for frame_idx in range(self.params.start_frame, tracking_length):
@@ -175,18 +178,14 @@ class NTRAIT2D(QWidget):
                         else:
                             # if the frame position is incoherent with the frame trace,
                             # we try again in finding the particle
-                            new_frame_trace.append(frame_idx)
-                            frame = video[frame_idx]
+                            frame = video[frame_position]
                             
-                            x, y = detection.radialsym_centre(
-                                detection.get_patch(frame, trace_point, self.params.patch_size)
+                            subpix = detection.radial_symmetry_centre(
+                                detection.get_patch(frame, trace_point, self.params.patch_size, full_search=True)
                             )
-                            subpix = Point(x, y)
 
-                            if (subpix.y < self.params.patch_size and 
-                                subpix.x < self.params.patch_size and 
-                                subpix.y >= 0 and 
-                                subpix.x >= 0):
+                            if (subpix < Point(self.params.patch_size, self.params.patch_size) and
+                                subpix >= Point(0, 0)):
                                 new_trace.append(
                                 Point(
                                     subpix.x + int(trace_point.x - self.params.patch_size/2), 
@@ -195,13 +194,18 @@ class NTRAIT2D(QWidget):
                             else:
                                 # otherwise use previous point
                                 new_trace.append(track.trace[frame_position])
-                    tracking_data.append(
-                        [
-                            [point.x, point.y, track_id, frame*track_id, frame_idx*self.params.frame_rate] 
-                            for point in new_trace
-                            for frame_idx in new_frame_trace
-                        ]
-                    )
+                            new_frame_trace.append(frame_position)
+                            frame_position += 1
+                    
+                    for point, frame_idx in zip(new_trace, new_frame_trace):
+                        tracking_data.append(
+                            [
+                                point.y*self.params.resolution,
+                                point.x*self.params.resolution,
+                                track_id,
+                                frame_idx*self.params.frame_rate
+                            ]
+                        )
             
             filepath, _ = QFileDialog.getSaveFileName(
                 caption="Save TRAIT2D tracks",
@@ -210,10 +214,7 @@ class NTRAIT2D(QWidget):
             if filepath:   
                 if not(filepath.endswith(".csv")):
                     filepath += ".csv"
-        
-                
+
                 with open(filepath, 'w') as csv_file:
                     writer = csv.writer(csv_file)
                     writer.writerows(tracking_data)
-        
-                csv_file.close()

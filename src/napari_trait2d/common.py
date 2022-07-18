@@ -1,10 +1,16 @@
 from dataclasses import dataclass
 from enum import Enum
-from typing import Union, NamedTuple
+from typing import Union
+from dataclasses import dataclass
+from numpy import array
 
-class Point(NamedTuple):
+@dataclass(order=True)
+class Point:
     x: Union[int, float]
     y: Union[int, float]
+
+    def __array__(self):
+        return array([self.x, self.y])
 
 class SpotEnum(Enum):
     DARK = "DARK"

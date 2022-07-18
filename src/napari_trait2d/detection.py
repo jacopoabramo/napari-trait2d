@@ -5,38 +5,64 @@ from scipy.signal import convolve2d
 from skimage.feature import peak_local_max
 from napari_trait2d.common import Point, TRAIT2DParams
 
-def get_patch(frame: np.ndarray, point: Point, patch_size: int) -> np.ndarray:
-    x_shape, y_shape = frame.shape
+def get_patch(frame: np.ndarray, point: Point, patch_size: int, full_search: bool = False) -> np.ndarray:
+    """ Creates a patch of the specified input frame to use for radial symmetry center calculation of a particle
+    on a specified point.
 
+    Args:
+        frame (np.ndarray): input frame
+        point (Point): coordinates of the point to use for radial symmetry centre search.
+        patch_size (int): width/height of the region to search
+        full_search (bool, optional): if True, search radius will be extended to the overall specified patch_size. Defaults to False.
+
+    Returns:
+        np.ndarray: _description_
+    """
+    x_shape, y_shape = frame.shape
     data = np.zeros((patch_size, patch_size))
 
-    # start point
-    start_x = int(point.x - patch_size/2)
-    start_y = int(point.y - patch_size/2)
+    #start point
+    start_x, start_y = int(point.x - patch_size/2), int(point.y - patch_size/2)
 
-    # end point
-    end_x = int(point.x + patch_size/2)
-    end_y = int(point.y + patch_size/2)
+    #end point
+    end_x, end_y = int(point.x + patch_size/2), int(point.y + patch_size/2)
 
     x_0, x_1 = 0, patch_size
     y_0, y_1 = 0, patch_size
 
     # define ROI coordinates
-    if start_x < 0:
-        start_x = 0
-        x_0 = int(patch_size/2 - point.x)
+    if not full_search:
+        if start_x < 0:
+            start_x =0
+            x_0 = int(patch_size/2 - point.x)
+            
+        if start_y < 0:
+            start_y = 0
+            y_0 = int(patch_size/2 - point.y) 
+            
+        if end_x > x_shape:
+            end_x = x_shape
+            x_1 = int(x_shape - point.x + patch_size/2)
 
-    if start_y < 0:
-        start_y = 0
-        y_0 = int(patch_size/2 - point.y)
+        if end_y > y_shape:
+            end_y = y_shape
+            y_1 = int(y_shape - point.y + patch_size/2)
+    else:
+        if start_x<0:
+            start_x = 0
+            end_x = patch_size
+            
+        if start_y < 0:
+            start_y = 0
+            end_y = patch_size
+            
+        if end_x > x_shape:
+            end_x = x_shape
+            start_x = x_shape - patch_size
 
-    if end_x > x_shape:
-        end_x = x_shape
-        x_1 = int(x_shape - point.x + patch_size/2)
-
-    if end_y > y_shape:
-        end_y = y_shape
-        y_1 = int(y_shape - point.y + patch_size/2)
+        if end_y > y_shape:
+            end_y = y_shape
+            start_y = y_shape - patch_size
 
     data[x_0 : x_1, y_0 : y_1] = frame[start_x : end_x, start_y : end_y]
 
@@ -77,7 +103,7 @@ def spot_enhancing_filter(img: np.ndarray, sigma: int, threshold: float) -> tupl
 
     return img_sef
 
-def radialsym_centre(img: np.ndarray) -> Point:
+def radial_symmetry_centre(img: np.ndarray) -> Point:
     '''
     Calculates the center of a 2D intensity distribution (calculation of radial symmetry centers)  
 
@@ -154,9 +180,11 @@ def detect(frame: np.ndarray, params: TRAIT2DParams) -> list:
     coordinates = []
     for point in peak_coordinates:
         # radial symmetry centers
-        x, y = radialsym_centre(get_patch(frame, point, params.patch_size))
+        subpix = radial_symmetry_centre(get_patch(frame, point, params.patch_size))
 
         # check that the centre is inside of the spot
-        if y < params.patch_size and x < params.patch_size and y >= 0 and x >= 0:
-            coordinates.append(Point(x + int(point.x - params.patch_size/2), y + int(point.y - params.patch_size/2)))
+        if subpix < Point(params.patch_size, params.patch_size) and subpix >= Point(0, 0):
+            coordinates.append(
+                Point(subpix.x + int(point.x - params.patch_size/2), subpix.y + int(point.y - params.patch_size/2))
+            )
     return coordinates
