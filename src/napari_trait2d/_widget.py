@@ -6,13 +6,10 @@ see: https://napari.org/plugins/guides.html?#widgets
 
 Replace code below according to your needs.
 """
-
-from pprint import pprint
-
 import json, csv
 import numpy as np
-import napari_trait2d.detection as detection
-from skimage.util import invert, img_as_ubyte
+import napari_trait2d.workflow as workflow
+from napari.layers.image.image import Image
 from napari.viewer import Viewer
 from qtpy.QtWidgets import (
     QWidget,
@@ -27,8 +24,11 @@ from superqt import QEnumComboBox
 from dataclasses import fields
 from dacite import from_dict
 from typing import get_type_hints
-from napari_trait2d.common import *
-from napari_trait2d.tracking import Tracker
+from napari_trait2d.common import (
+    TRAIT2DParams,
+    SpotEnum,
+    ParamType
+)
 
 class NTRAIT2D(QWidget):
     def __init__(self, viewer: Viewer, parent=None):
@@ -135,121 +135,39 @@ class NTRAIT2D(QWidget):
     def _on_run_tracking_clicked(self, store: bool):
 
         for layer in self.viewer.layers.selection:
-            video : np.ndarray = layer.data
-            tracker = Tracker(self.params)
-
-            if video.dtype != np.uint8:
-                video = (video - np.min(video))/(np.max(video) - np.min(video))
-                video = img_as_ubyte(video)
-
-            tracking_length = min(self.params.end_frame + 1, video.shape[0])
-
-            # frame to frame detection and linking loop 
-            for frame_idx in range(self.params.start_frame, tracking_length):
-                
-                # detect particles on specific frame
-                # using stored parameters
-                frame = video[frame_idx]
-                if self.params.spot_type == SpotEnum.DARK:
-                    frame = invert(frame)
-                centers = detection.detect(frame, self.params)
-
-                # track detected particles
-                tracker.update(centers, frame_idx)
             
-            # set complete tracks found so far
-            tracker.complete_tracks.update(tracker.tracks)
-            
-            # rearrange the data for saving
-            # first element of the list
-            # is a list of header names
-            tracking_data = [['X', 'Y', 'Track ID', 't']]
+            if type(layer) == Image:
+                tracking_data = workflow.run_tracking(layer.data, self.params)
+                if store:
+                    filepath, _ = QFileDialog.getSaveFileName(
+                        caption="Save TRAIT2D tracks",
+                        filter="CSV (*.csv)",
+                    )
+                    if filepath:   
+                        if not(filepath.endswith(".csv")):
+                            filepath += ".csv"
 
-            new_frame_trace = []
-            new_trace = []
+                        with open(filepath, 'w') as csv_file:
+                            writer = csv.writer(csv_file)
+                            writer.writerows(tracking_data)
+                else:
+                    # we create a Track layer with the 
+                    # detected coordinates;
+                    # data is arranged as follows: ['X', 'Y', 'Track ID', 't']
+                    # we must reshape it as ['Track ID', 't', 'Y', 'X']
+                    # the 't' parameter is multiplied for the parameters frame rate
+                    # so we must divide it
+                    points = np.array([
+                        [
+                            data[2] - 1, int(data[3]/self.params.frame_rate), data[1], data[0]
+                        ]
+                        for data in tracking_data 
+                        if type(data[0]) != str and type(data[1]) != str
+                    ])
 
-            for track_id, track in tracker.complete_tracks.items():
-                if len(track.trace) >= self.params.min_track_length:
-                    old_position = track.trace_frame[0]
-                    for frame_idx in range(track.trace_frame[0], track.trace_frame[-1] + 1):
-                        # we reconstruct the point trace
-                        # and try to fill the gaps between frames
-                        new_frame_trace.append(frame_idx)
-                        frame_idx_old = track.trace_frame[old_position]
-
-                        # if frame is already present in the frame trace,
-                        # just add it to the new list and add the point too
-                        if frame_idx_old == frame_idx:
-                            new_trace.append(track.trace[old_position])
-                            old_position += 1
-                        else:
-                            # if the frame position is incoherent with the frame trace,
-                            # we try again in finding the particle on the current frame
-                            # but using as a reference the point at old_position
-                            frame = video[frame_idx]
-                            trace_point = track.trace[old_position]
-                            
-                            subpix = detection.radial_symmetry_centre(
-                                detection.get_patch(frame, trace_point, self.params.patch_size, full_search=True)
-                            )
-
-                            if (subpix < Point(self.params.patch_size, self.params.patch_size) and
-                                subpix >= Point(0, 0)):
-                                new_trace.append(
-                                Point(
-                                    subpix.x + int(trace_point.x - self.params.patch_size/2), 
-                                    subpix.y + int(trace_point.y - self.params.patch_size/2))
-                                )
-                            else:
-                                # otherwise use previous point
-                                new_trace.append(track.trace[old_position])
-                    
-                    for point, frame_idx in zip(new_trace, new_frame_trace):
-                        tracking_data.append(
-                            # we are swapping x and y
-                            # due to how the video stack is arranged
-                            [
-                                point.y*self.params.resolution,
-                                point.x*self.params.resolution,
-                                track_id,
-                                frame_idx*self.params.frame_rate
-                            ]
-                        )
-                    
-                    # clear lists for next iteration
-                    new_frame_trace.clear()
-                    new_trace.clear()
-            
-            if store:
-                filepath, _ = QFileDialog.getSaveFileName(
-                    caption="Save TRAIT2D tracks",
-                    filter="CSV (*.csv)",
-                )
-                if filepath:   
-                    if not(filepath.endswith(".csv")):
-                        filepath += ".csv"
-
-                    with open(filepath, 'w') as csv_file:
-                        writer = csv.writer(csv_file)
-                        writer.writerows(tracking_data)
-            else:
-                # we create a Track layer with the 
-                # detected coordinates;
-                # data is arranged as follows: ['X', 'Y', 'Track ID', 't']
-                # we must reshape it as ['Track ID', 't', 'Y', 'X']
-                # the 't' parameter is multiplied for the parameters frame rate
-                # so we must divide it
-                points = np.array([
-                    [
-                        data[2] - 1, int(data[3]/self.params.frame_rate), data[1], data[0]
-                    ]
-                    for data in tracking_data 
-                    if type(data[0]) != str and type(data[1]) != str
-                ])
-
-                self.viewer.add_tracks(
-                    name=layer.name + "_tracks",
-                    data=points,
-                    tail_length=points.shape[-1],
-                    tail_width=3,
-                )
+                    self.viewer.add_tracks(
+                        data=points,
+                        name=layer.name + "_tracks",
+                        tail_width=3,
+                        tail_length=points.shape[0]
+                    )
