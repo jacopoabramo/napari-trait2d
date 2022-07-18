@@ -139,8 +139,7 @@ class NTRAIT2D(QWidget):
                 video = (video - np.min(video))/(np.max(video) - np.min(video))
                 video = img_as_ubyte(video)
 
-            tracking_length = min(self.params.end_frame, video.shape[0])
-            print(f"tracking length: {tracking_length}")
+            tracking_length = min(self.params.end_frame + 1, video.shape[0])
 
             # frame to frame detection and linking loop 
             for frame_idx in range(self.params.start_frame, tracking_length):
@@ -163,22 +162,29 @@ class NTRAIT2D(QWidget):
             # is a list of header names
             tracking_data = [['X', 'Y', 'Track ID', 't']]
 
+            new_frame_trace = []
+            new_trace = []
+
             for track_id, track in tracker.complete_tracks.items():
                 if len(track.trace) >= self.params.min_track_length:
-                    new_frame_trace = []
-                    new_trace = []
-                    frame_position = 0
-                    for frame_idx, trace_point in zip(track.trace_frame, track.trace):
+                    old_position = track.trace_frame[0]
+                    for frame_idx in range(track.trace_frame[0], track.trace_frame[-1] + 1):
+                        # we reconstruct the point trace
+                        # and try to fill the gaps between frames
+                        new_frame_trace.append(frame_idx)
+                        frame_idx_old = track.trace_frame[old_position]
+
                         # if frame is already present in the frame trace,
                         # just add it to the new list and add the point too
-                        if frame_position == frame_idx:
-                            new_frame_trace.append(frame_idx)
-                            new_trace.append(trace_point)
-                            frame_position += 1
+                        if frame_idx_old == frame_idx:
+                            new_trace.append(track.trace[old_position])
+                            old_position += 1
                         else:
                             # if the frame position is incoherent with the frame trace,
-                            # we try again in finding the particle
-                            frame = video[frame_position]
+                            # we try again in finding the particle on the current frame
+                            # but using as a reference the point at old_position
+                            frame = video[frame_idx]
+                            trace_point = track.trace[old_position]
                             
                             subpix = detection.radial_symmetry_centre(
                                 detection.get_patch(frame, trace_point, self.params.patch_size, full_search=True)
@@ -193,9 +199,7 @@ class NTRAIT2D(QWidget):
                                 )
                             else:
                                 # otherwise use previous point
-                                new_trace.append(track.trace[frame_position])
-                            new_frame_trace.append(frame_position)
-                            frame_position += 1
+                                new_trace.append(track.trace[old_position])
                     
                     for point, frame_idx in zip(new_trace, new_frame_trace):
                         tracking_data.append(
@@ -206,6 +210,10 @@ class NTRAIT2D(QWidget):
                                 frame_idx*self.params.frame_rate
                             ]
                         )
+                    
+                    # clear lists for next iteration
+                    new_frame_trace.clear()
+                    new_trace.clear()
             
             filepath, _ = QFileDialog.getSaveFileName(
                 caption="Save TRAIT2D tracks",
