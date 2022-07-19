@@ -33,7 +33,7 @@ def get_patch(frame: np.ndarray, point: Point, patch_size: int, full_search: boo
     # define ROI coordinates
     if not full_search:
         if start_x < 0:
-            start_x =0
+            start_x = 0
             x_0 = int(patch_size/2 - point.x)
             
         if start_y < 0:
