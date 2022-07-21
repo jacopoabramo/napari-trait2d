@@ -9,6 +9,7 @@ Replace code below according to your needs.
 import json, csv
 import numpy as np
 import napari_trait2d.workflow as workflow
+import warnings
 from napari.layers.image.image import Image
 from napari.viewer import Viewer
 from qtpy.QtWidgets import (
@@ -138,36 +139,42 @@ class NTRAIT2D(QWidget):
             
             if type(layer) == Image:
                 tracking_data = workflow.run_tracking(layer.data, self.params)
-                if store:
-                    filepath, _ = QFileDialog.getSaveFileName(
-                        caption="Save TRAIT2D tracks",
-                        filter="CSV (*.csv)",
-                    )
-                    if filepath:   
-                        if not(filepath.endswith(".csv")):
-                            filepath += ".csv"
 
-                        with open(filepath, 'w') as csv_file:
-                            writer = csv.writer(csv_file)
-                            writer.writerows(tracking_data)
+                # show or store tracks only if it has been actually found
+                # first item of tracking data is the header information so we skip it
+                if len(tracking_data) > 1:
+                    if store:
+                        filepath, _ = QFileDialog.getSaveFileName(
+                            caption="Save TRAIT2D tracks",
+                            filter="CSV (*.csv)",
+                        )
+                        if filepath:   
+                            if not(filepath.endswith(".csv")):
+                                filepath += ".csv"
+
+                            with open(filepath, 'w') as csv_file:
+                                writer = csv.writer(csv_file)
+                                writer.writerows(tracking_data)
+                    else:
+                        # we create a Track layer with the 
+                        # detected coordinates;
+                        # data is arranged as follows: ['X', 'Y', 'Track ID', 't']
+                        # we must reshape it as ['Track ID', 't', 'Y', 'X']
+                        # the 't' parameter is multiplied for the parameters frame rate
+                        # so we must divide it
+                        points = np.array([
+                            [
+                                data[2] - 1, int(data[3]/self.params.frame_rate), data[1], data[0]
+                            ]
+                            for data in tracking_data 
+                            if type(data[0]) != str and type(data[1]) != str
+                        ])
+
+                        self.viewer.add_tracks(
+                            data=points,
+                            name=layer.name + "_tracks",
+                            tail_width=3,
+                            tail_length=points.shape[0]
+                        )
                 else:
-                    # we create a Track layer with the 
-                    # detected coordinates;
-                    # data is arranged as follows: ['X', 'Y', 'Track ID', 't']
-                    # we must reshape it as ['Track ID', 't', 'Y', 'X']
-                    # the 't' parameter is multiplied for the parameters frame rate
-                    # so we must divide it
-                    points = np.array([
-                        [
-                            data[2] - 1, int(data[3]/self.params.frame_rate), data[1], data[0]
-                        ]
-                        for data in tracking_data 
-                        if type(data[0]) != str and type(data[1]) != str
-                    ])
-
-                    self.viewer.add_tracks(
-                        data=points,
-                        name=layer.name + "_tracks",
-                        tail_width=3,
-                        tail_length=points.shape[0]
-                    )
+                    warnings.warn("No tracks detected", RuntimeWarning)
