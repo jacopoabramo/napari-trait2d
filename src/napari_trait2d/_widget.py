@@ -81,7 +81,7 @@ class NTRAIT2D(QWidget):
         self.mainLayout.addWidget(self.trackAndStoreButton)
         self.setLayout(self.mainLayout)
 
-        self.loadFileButton.clicked.connect(self._on_load_clicked)
+        self.loadFileButton.clicked.connect(self._on_load_parameters_clicked)
         self.trackButton.clicked.connect(lambda: self._on_run_tracking_clicked(False))
         self.trackAndStoreButton.clicked.connect(lambda: self._on_run_tracking_clicked(True))
 
@@ -91,7 +91,7 @@ class NTRAIT2D(QWidget):
         else: # for QEnumComboBox type
             setattr(self.params, name, self.widgets[name].currentEnum())
 
-    def _on_load_clicked(self):
+    def _on_load_parameters_clicked(self):
 
         filepath, _ = QFileDialog.getOpenFileName(
             caption="Load TRAIT2D parameters",
