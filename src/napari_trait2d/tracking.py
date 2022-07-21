@@ -118,6 +118,6 @@ class Tracker:
                 self.tracks.update(new_tracks)
             
             # remove tracks which have too many skipped frames
-            for track_idx, track in self.tracks.items():
+            for track_idx, track in list(self.tracks.items()):
                 if track.skipped_frames > self.params.link_frame_gap:
                     del self.tracks[track_idx]
