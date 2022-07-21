@@ -44,7 +44,7 @@ def run_tracking(video: np.ndarray, params: TRAIT2DParams) -> list:
 
     for track_id, track in tracker.complete_tracks.items():
         if len(track.trace) >= params.min_track_length:
-            old_position = track.trace_frame[0]
+            old_position = 0
             for frame_idx in range(track.trace_frame[0], track.trace_frame[-1] + 1):
                 # we reconstruct the point trace
                 # and try to fill the gaps between frames
