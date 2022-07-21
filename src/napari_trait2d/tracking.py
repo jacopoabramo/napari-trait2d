@@ -118,6 +118,18 @@ class Tracker:
                 self.tracks.update(new_tracks)
             
             # remove tracks which have too many skipped frames
+            track_removed = False
             for track_idx, track in list(self.tracks.items()):
                 if track.skipped_frames > self.params.link_frame_gap:
+                    track_removed = True
                     del self.tracks[track_idx]
+            
+            # if a track has been removed we have to update the indexes of
+            # our track dictionary, otherwise at the next iteration
+            # the cost matrix will not be correctly indexed
+            if track_removed:
+                new_tracks_dict =  {idx + 1: track for idx, track in enumerate(list(self.tracks.values()))}
+                self.tracks.clear()
+                self.tracks.update(new_tracks_dict)
+                self.track_id_count = len(self.tracks)
+                
