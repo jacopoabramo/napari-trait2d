@@ -38,9 +38,9 @@ class NTRAIT2D(QWidget):
         self.mainLayout = QVBoxLayout()
 
         self.fileLayout = QFormLayout()
-        self.loadFileButton = QPushButton("Select")
+        self.loadParametersButton = QPushButton("Select")
         self.fileLayout.addRow(
-            "Load parameter file (*.csv, *.json)", self.loadFileButton
+            "Load parameter file (*.csv, *.json)", self.loadParametersButton
         )
         self.widgets = {}
 
@@ -81,7 +81,7 @@ class NTRAIT2D(QWidget):
         self.mainLayout.addWidget(self.trackAndStoreButton)
         self.setLayout(self.mainLayout)
 
-        self.loadFileButton.clicked.connect(self._on_load_parameters_clicked)
+        self.loadParametersButton.clicked.connect(self._on_load_parameters_clicked)
         self.trackButton.clicked.connect(lambda: self._on_run_tracking_clicked(False))
         self.trackAndStoreButton.clicked.connect(lambda: self._on_run_tracking_clicked(True))
 
