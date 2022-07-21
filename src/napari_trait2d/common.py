@@ -30,6 +30,6 @@ class TRAIT2DParams:
     frame_rate: int = 100
     start_frame: int = 0
     end_frame: int = 100
-    spot_type: SpotEnum = SpotEnum.BRIGHT
+    spot_type: SpotEnum = SpotEnum.DARK
 
 ParamType = Union[int, float, SpotEnum]
