@@ -1,5 +1,4 @@
 import numpy as np
-import warnings
 from scipy.ndimage import gaussian_laplace
 from scipy.signal import convolve2d
 from skimage.feature import peak_local_max
