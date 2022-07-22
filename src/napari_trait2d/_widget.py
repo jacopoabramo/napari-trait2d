@@ -6,10 +6,12 @@ see: https://napari.org/plugins/guides.html?#widgets
 
 Replace code below according to your needs.
 """
+import os
 import json, csv
 import numpy as np
 import napari_trait2d.workflow as workflow
 import warnings
+from tensorflow.python.client.device_lib import list_local_devices
 from napari.layers.image.image import Image
 from napari.viewer import Viewer
 from qtpy.QtWidgets import (
@@ -17,6 +19,7 @@ from qtpy.QtWidgets import (
     QFormLayout,
     QPushButton,
     QVBoxLayout,
+    QGroupBox,
     QDoubleSpinBox,
     QSpinBox,
     QFileDialog,
@@ -38,13 +41,15 @@ class NTRAIT2D(QWidget):
         self.params = TRAIT2DParams()
         self.mainLayout = QVBoxLayout()
 
+        # file selection
         self.fileLayout = QFormLayout()
         self.loadParametersButton = QPushButton("Select")
         self.fileLayout.addRow(
             "Load parameter file (*.csv, *.json)", self.loadParametersButton
         )
-        self.widgets = {}
+        self.paramWidgets = {}
 
+        # widget construction
         def build_widget(attr: ParamType):
             widget = None
             attr_type = type(attr)
@@ -62,35 +67,76 @@ class NTRAIT2D(QWidget):
             else:
                 raise TypeError("Parameter type is unsupported in widget selection.")
             return widget, signal
-
+        self.paramGroupBox = QGroupBox("TRAIT2D parameters")
         self.paramLayout = QFormLayout()
         for field in fields(self.params):
             attr = getattr(self.params, field.name)
-            self.widgets[field.name], signal = build_widget(attr)
-            self.paramLayout.addRow(field.name, self.widgets[field.name])
+            self.paramWidgets[field.name], signal = build_widget(attr)
+            self.paramLayout.addRow(self.params.info[field.name], self.paramWidgets[field.name])
 
             signal.connect(
                 lambda _, name=field.name: self._update_field(name=name)
             )
+        self.paramGroupBox.setLayout(self.paramLayout)
 
+        # this forces the patch size to be always even
+        # it's annoying because it's not done in a more generalized
+        # approach but for only one parameter is not worth
+        self.paramWidgets["patch_size"].setSingleStep(2)
+
+        # ray package settings
+        self.raySettingsGroupBox = QGroupBox("Ray settings")
+        self.raySettingsLayout = QFormLayout()
+        self.num_gpus = len([x for x in list_local_devices() if x.device_type == 'GPU'])
+        self.num_cpus = os.cpu_count()
+
+        self.rayCPUSpinBox = QSpinBox()
+        self.rayCPUSpinBox.setRange(1, self.num_cpus)
+        self.rayCPUSpinBox.setValue(self.num_cpus)
+        self.raySettingsLayout.addRow("Number of CPUs", self.rayCPUSpinBox)
+        self.rayCPUSpinBox.valueChanged.connect(self._update_cpu_count)
+
+        if self.num_gpus > 0:
+            self.rayGPUSpinBox = QSpinBox()
+            self.rayGPUSpinBox.setRange(0, self.num_gpus)
+            self.rayGPUSpinBox.setValue(0)
+            self.raySettingsLayout.addRow("Number of GPUs", self.rayGPUSpinBox)
+            self.rayGPUSpinBox.valueChanged.connect(self._update_gpu_count)
+        
+        self.raySettingsGroupBox.setLayout(self.raySettingsLayout)
+
+        # actions widget
         self.trackButton = QPushButton("Track particles")
         self.trackAndStoreButton = QPushButton("Track and store")
 
+        # final layout
         self.mainLayout.addLayout(self.fileLayout)
-        self.mainLayout.addLayout(self.paramLayout)
+        self.mainLayout.addWidget(self.raySettingsGroupBox)
+        self.mainLayout.addWidget(self.paramGroupBox)
         self.mainLayout.addWidget(self.trackButton)
         self.mainLayout.addWidget(self.trackAndStoreButton)
         self.setLayout(self.mainLayout)
+        self.raySettingsGroupBox.setCheckable(True)
+        self.raySettingsGroupBox.setChecked(False)
 
+        # widgets signal connection
         self.loadParametersButton.clicked.connect(self._on_load_parameters_clicked)
         self.trackButton.clicked.connect(lambda: self._on_run_tracking_clicked(False))
         self.trackAndStoreButton.clicked.connect(lambda: self._on_run_tracking_clicked(True))
 
+        # ray.init()
+    
+    def _update_cpu_count(self, value: int):
+        self.num_cpus = value
+    
+    def _update_gpu_count(self, value: int):
+        self.num_gpus = value
+
     def _update_field(self, name: str):
         if type(getattr(self.params, name)) in [int, float]:
-            setattr(self.params, name, self.widgets[name].value())
+            setattr(self.params, name, self.paramWidgets[name].value())
         else: # for QEnumComboBox type
-            setattr(self.params, name, self.widgets[name].currentEnum())
+            setattr(self.params, name, self.paramWidgets[name].currentEnum())
 
     def _on_load_parameters_clicked(self):
 
@@ -121,7 +167,7 @@ class NTRAIT2D(QWidget):
                 }
                 self.params = from_dict(TRAIT2DParams, new_data)
             except Exception as e:
-                raise Exception(e)
+                raise ValueError(e)
             for field in fields(self.params):
                 for idx in range(self.paramLayout.rowCount()):
                     if (field.name == self.paramLayout.itemAt(idx, QFormLayout.ItemRole.LabelRole).widget().text()):
